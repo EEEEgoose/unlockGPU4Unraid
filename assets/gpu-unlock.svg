@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="640" viewBox="0 0 256 256">
+  <g transform="translate(0 -16)">
+  <!-- Graphics card: bracket, board, two fans, PCIe fingers -->
+  <rect x="14" y="58" width="12" height="128" rx="3" fill="#8a94a6"/>
+  <rect x="26" y="66" width="200" height="112" rx="16" fill="#2f3542"/>
+  <g fill="#d4a017">
+    <rect x="70" y="178" width="12" height="14" rx="2"/>
+    <rect x="88" y="178" width="12" height="14" rx="2"/>
+    <rect x="106" y="178" width="12" height="14" rx="2"/>
+    <rect x="124" y="178" width="12" height="14" rx="2"/>
+    <rect x="142" y="178" width="12" height="14" rx="2"/>
+  </g>
+  <g fill="#1e232d" stroke="#8a94a6" stroke-width="7">
+    <circle cx="82" cy="122" r="36"/>
+    <circle cx="168" cy="122" r="36"/>
+  </g>
+  <g fill="#8a94a6">
+    <circle cx="82" cy="122" r="10"/>
+    <circle cx="168" cy="122" r="10"/>
+  </g>
+  <!-- Open padlock badge -->
+  <circle cx="192" cy="186" r="56" fill="#ff8c2f" stroke="#ffffff" stroke-width="10"/>
+  <path d="M178 182 V162 A16 16 0 0 1 210 162 V166" fill="none" stroke="#ffffff" stroke-width="9" stroke-linecap="round"/>
+  <rect x="166" y="180" width="52" height="40" rx="7" fill="#ffffff"/>
+  <circle cx="192" cy="196" r="6" fill="#ff8c2f"/>
+  <rect x="189" y="198" width="6" height="12" rx="2" fill="#ff8c2f"/>
+  </g>
+</svg>

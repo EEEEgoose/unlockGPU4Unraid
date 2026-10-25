@@ -1,0 +1,4 @@
+[   41.199010] pci 0000:cd:00.0: card already initialised since power on (WPR2 enabled); power off first
+[   41.199014] gpu_unlock: failure kernel/gpu_unlock/unlock_610.c:1064 unlock_transaction_gfw error=-16
+[   41.199020] pci 0000:cd:00.0: gpu_unlock: unlock failed (-16)
+[   41.201337] pci 0000:cc:00.0: gpu_unlock: unlocked

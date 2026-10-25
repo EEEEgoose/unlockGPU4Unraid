@@ -1,0 +1,4 @@
+[   41.198220] gpu_unlock: failure kernel/gpu_unlock/unlock_610.c:1309 unlock_transaction_reset error=-5
+[   41.198301] pci 0000:cc:00.0: firmware did not stop; keeping its DMA buffers until power off
+[   41.198305] pci 0000:cc:00.0: gpu_unlock: unlock failed (-5)
+[   41.201401] pci 0000:cd:00.0: gpu_unlock: unlocked

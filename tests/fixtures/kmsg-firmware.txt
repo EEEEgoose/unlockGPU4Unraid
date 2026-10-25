@@ -1,0 +1,2 @@
+[   41.101000] pci 0000:cc:00.0: Direct firmware load for gpu-unlock/610.43.03/gsp_ga10x.bin failed with error -2
+[   41.101010] pci 0000:cc:00.0: gpu_unlock: firmware load failed (-2)

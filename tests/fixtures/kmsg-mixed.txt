@@ -1,0 +1,2 @@
+[   41.201337] pci 0000:cc:00.0: gpu_unlock: unlocked
+[   41.201512] pci 0000:cd:00.0: gpu_unlock: unlock failed (-16)

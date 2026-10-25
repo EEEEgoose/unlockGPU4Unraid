@@ -1,0 +1,327 @@
+#!/bin/bash
+# gpu-unlock-control: boot coordination, inspection and status for the gpu-unlock plugin.
+# See docs/boot-integration.md for the boot chain this implements.
+set -u
+
+PLUGIN_DIR=${GPU_UNLOCK_PLUGIN_DIR:-/boot/config/plugins/gpu-unlock}
+CFG=$PLUGIN_DIR/settings.cfg
+PKG_DIR=$PLUGIN_DIR/packages
+BOOT_MODPROBE=${GPU_UNLOCK_BOOT_MODPROBE:-/boot/config/modprobe.d}
+ETC_MODPROBE=${GPU_UNLOCK_ETC_MODPROBE:-/etc/modprobe.d}
+SYSFS_PCI=${GPU_UNLOCK_SYSFS_PCI:-/sys/bus/pci/devices}
+SYSFS_MODULE=${GPU_UNLOCK_SYSFS_MODULE:-/sys/module}
+BOOT_ID_FILE=${GPU_UNLOCK_BOOT_ID_FILE:-/proc/sys/kernel/random/boot_id}
+RUN_DIR=${GPU_UNLOCK_RUN_DIR:-/var/run/gpu-unlock}
+LOG=${GPU_UNLOCK_LOG:-/var/log/gpu-unlock.log}
+KERNEL=${GPU_UNLOCK_KERNEL:-$(uname -r)}
+NOTIFY=${GPU_UNLOCK_NOTIFY:-/usr/local/emhttp/webGui/scripts/notify}
+
+# Persistent: keeps udev from autoloading nvidia before gpu_unlock has run.
+DEFER_CONF=$BOOT_MODPROBE/gpu-unlock.conf
+# This boot only: refuses every later nvidia load after a fault that needs a power off.
+BLOCK_CONF=$ETC_MODPROBE/gpu-unlock-block.conf
+STATUS=$RUN_DIR/status.json
+NVIDIA_MODULES="nvidia nvidia_uvm nvidia_modeset nvidia_drm nvidia_peermem"
+T=$'\t'
+NL=$'\n'
+
+# Device IDs accepted by upstream kernel/gpu_unlock/main.c (supported_ids).
+SUPPORTED_IDS="2200 2203 2204 2205 2206 2207 2208 220a 220d 2216 222b 222f
+2480 2482 2483 2484 2486 2487 2488 2489 248a 248c 248d 248e 249c 249d 249f 24a0
+24a4 24ac 24ad 24af 24bf 24c0 24c7 24c8 24c9 24dc 24dd 24df 24e0
+2414
+2501 2503 2504 2505 2507 2508 2509 252f 2544"
+
+log() {
+  echo "$(date '+%F %T') $*" >> "$LOG"
+}
+
+# Reads one key from settings.cfg as data; the file is never sourced.
+cfg_get() {
+  local line
+  [ -f "$CFG" ] || return 0
+  line=$(grep -E "^$1=" "$CFG" | tail -n 1)
+  line=${line#*=}
+  line=${line#\"}
+  line=${line%\"}
+  printf '%s' "$line"
+}
+
+cfg_write() {
+  mkdir -p "$PLUGIN_DIR"
+  printf 'enabled="%s"\ntargets="%s"\n' "$1" "$2" > "$CFG.tmp" && mv "$CFG.tmp" "$CFG"
+}
+
+pci_attr() {
+  local value
+  value=$(cat "$SYSFS_PCI/$1/$2" 2>/dev/null) || return 1
+  printf '%s' "${value#0x}"
+}
+
+pci_driver() {
+  [ -L "$SYSFS_PCI/$1/driver" ] && basename "$(readlink "$SYSFS_PCI/$1/driver")"
+}
+
+# A full PCI address of a supported NVIDIA card present in this machine.
+supported() {
+  local device
+  echo "$1" | grep -Eq '^[0-9a-f]{4}:[0-9a-f]{2}:[0-9a-f]{2}\.[0-7]$' || return 1
+  [ "$(pci_attr "$1" vendor)" = 10de ] || return 1
+  device=$(pci_attr "$1" device) || return 1
+  case " $(echo $SUPPORTED_IDS) " in *" $device "*) return 0 ;; esac
+  return 1
+}
+
+boot_id() {
+  cat "$BOOT_ID_FILE"
+}
+
+kmod_package() {
+  ls "$PKG_DIR"/gpu-unlock-kmod-*_"$(echo "$KERNEL" | tr - _)"-x86_64-*.txz 2>/dev/null | tail -n 1
+}
+
+firmware_package() {
+  ls "$PKG_DIR"/gpu-unlock-firmware-*-noarch-*.txz 2>/dev/null | tail -n 1
+}
+
+json_str() {
+  printf '"%s"' "$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+}
+
+status_is_current() {
+  [ -f "$STATUS" ] && grep -q "\"boot_id\": $(json_str "$(boot_id)")" "$STATUS"
+}
+
+# Status line for one card from the kernel log lines added by this modprobe.
+# Prints "state<TAB>reason<TAB>power_off" (power_off is yes or no).
+card_result() {
+  local pci=$1 lines=$2 mine reason
+  mine=$(printf '%s\n' "$lines" | grep -F "$pci")
+  if printf '%s\n' "$mine" | grep -q 'power off'; then
+    reason=$(printf '%s\n' "$mine" | grep 'power off' | head -n 1 | sed "s/.*$pci: //")
+    printf 'failed\t%s\tyes\n' "$reason"
+  elif printf '%s\n' "$mine" | grep -q 'gpu_unlock: unlocked$'; then
+    printf 'unlocked\t\tno\n'
+  elif reason=$(printf '%s\n' "$mine" | grep -o 'gpu_unlock: unlock failed ([-0-9]*)' | head -n 1) && [ -n "$reason" ]; then
+    printf 'failed\t%s\tno\n' "${reason#gpu_unlock: }"
+  elif printf '%s\n' "$lines" | grep -qF "no supported card at \"$pci\""; then
+    printf 'failed\tno supported card at this address\tno\n'
+  elif reason=$(printf '%s\n' "$mine" | grep -o 'gpu_unlock: firmware load failed ([-0-9]*)' | head -n 1) && [ -n "$reason" ]; then
+    printf 'failed\t%s\tno\n' "${reason#gpu_unlock: }"
+  elif printf '%s\n' "$lines" | grep -q 'gpu_unlock: firmware load failed'; then
+    printf 'failed\tfirmware load failed\tno\n'
+  else
+    printf 'failed\tno result in kernel log\tno\n'
+  fi
+}
+
+# The NVIDIA modules udev would load for the NVIDIA display devices, were they
+# not blacklisted. modprobe -R ignores the blacklist; nouveau and nvidiafb are left out.
+alias_modules() {
+  local dev m
+  for dev in "$SYSFS_PCI"/*; do
+    [ "$(pci_attr "$(basename "$dev")" vendor)" = 10de ] || continue
+    case $(pci_attr "$(basename "$dev")" class) in 03*) ;; *) continue ;; esac
+    modprobe -R "$(cat "$dev/modalias" 2>/dev/null)" 2>/dev/null
+  done | sort -u | while read -r m; do
+    case " $NVIDIA_MODULES " in *" $m "*) echo "$m" ;; esac
+  done
+}
+
+# Hands the cards to NVIDIA as udev would have, unless nvidia is already loaded
+# or its package is not installed yet (the NVIDIA Driver plugin then installs and loads it).
+load_nvidia() {
+  local m mods
+  if [ -d "$SYSFS_MODULE/nvidia" ]; then
+    return 0
+  fi
+  if ! modinfo -k "$KERNEL" nvidia > /dev/null 2>&1; then
+    log "boot: nvidia module not installed yet; left to the NVIDIA Driver plugin"
+    return 0
+  fi
+  mods=$(alias_modules)
+  for m in ${mods:-nvidia}; do
+    if modprobe "$m"; then
+      log "boot: $m loaded"
+    else
+      log "boot: modprobe $m failed ($?)"
+    fi
+  done
+}
+
+block_nvidia() {
+  local m
+  mkdir -p "$ETC_MODPROBE"
+  {
+    echo "# gpu-unlock: a card needs a power off before NVIDIA may use it (this boot only)"
+    for m in $NVIDIA_MODULES; do
+      echo "install $m /bin/false"
+    done
+  } > "$BLOCK_CONF"
+  log "boot: NVIDIA loading blocked for this boot; power the server off before using the GPUs"
+  [ -x "$NOTIFY" ] && "$NOTIFY" -e "GPU Unlock" -s "Power off required" -i alert \
+    -d "gpu_unlock reported a fault that needs a power off. NVIDIA was not loaded this boot." -l "/Settings/GPUUnlock"
+  return 0
+}
+
+cmd_inspect() {
+  local dev bdf class id driver selected model targets
+  targets=",$(cfg_get targets),"
+  for dev in "$SYSFS_PCI"/*; do
+    bdf=$(basename "$dev")
+    [ "$(pci_attr "$bdf" vendor)" = 10de ] || continue
+    class=$(pci_attr "$bdf" class)
+    case $class in 03*) ;; *) continue ;; esac
+    id=10de:$(pci_attr "$bdf" device)
+    driver=$(pci_driver "$bdf")
+    [ -n "$driver" ] && [ -r "$SYSFS_MODULE/$driver/version" ] && driver="$driver $(cat "$SYSFS_MODULE/$driver/version")"
+    case $targets in *",$bdf,"*) selected=yes ;; *) selected=no ;; esac
+    # "cc:00.0 VGA compatible controller: NVIDIA Corporation GA102 [...]" -> after the class name
+    model=$(lspci -s "$bdf" 2>/dev/null | sed 's/^[^ ]* [^:]*: //')
+    printf 'gpu\t%s\t%s\t%s\t%s\t%s\t%s\n' "$bdf" "$id" "$(supported "$bdf" && echo yes || echo no)" \
+      "${driver:-none}" "$selected" "$model"
+  done
+  printf 'kernel\t%s\n' "$KERNEL"
+  printf 'module\t%s\n' "$(modinfo -k "$KERNEL" -n gpu_unlock 2>/dev/null || echo missing)"
+  printf 'kmod_package\t%s\n' "$(basename "$(kmod_package)" 2>/dev/null)"
+  printf 'firmware_package\t%s\n' "$(basename "$(firmware_package)" 2>/dev/null)"
+  printf 'deferred\t%s\n' "$([ -f "$DEFER_CONF" ] && echo yes || echo no)"
+  printf 'blocked\t%s\n' "$([ -f "$BLOCK_CONF" ] && echo yes || echo no)"
+}
+
+cmd_prepare_boot() {
+  local pci m
+  if [ "$(cfg_get enabled)" != yes ]; then
+    rm -f "$DEFER_CONF"
+    echo "unlock disabled for the next boot"
+    return 0
+  fi
+  if [ -z "$(cfg_get targets)" ]; then
+    echo "no target selected" >&2
+    return 1
+  fi
+  for pci in $(cfg_get targets | tr , ' '); do
+    if ! supported "$pci"; then
+      echo "$pci is not a supported card" >&2
+      return 1
+    fi
+  done
+  if [ -z "$(kmod_package)" ] || [ -z "$(firmware_package)" ]; then
+    echo "no gpu_unlock module or firmware package for kernel $KERNEL in $PKG_DIR" >&2
+    return 1
+  fi
+  mkdir -p "$BOOT_MODPROBE"
+  {
+    echo "# gpu-unlock: nvidia is loaded by gpu-unlock-control boot once the unlock has run"
+    for m in $NVIDIA_MODULES; do
+      echo "blacklist $m"
+    done
+  } > "$DEFER_CONF"
+  log "prepare-boot: unlock of $(cfg_get targets) scheduled for the next boot"
+  echo "unlock of $(cfg_get targets) scheduled for the next boot"
+}
+
+cmd_boot() {
+  local id pci candidates="" entries="" result state reason power_off=no before lines rc=0
+  mkdir -p "$RUN_DIR"
+  id=$(boot_id)
+  if status_is_current; then
+    log "boot: already ran for this boot"
+    return 0
+  fi
+  if [ "$(cfg_get enabled)" != yes ]; then
+    # Only undo a deferral this plugin caused.
+    [ -f "$ETC_MODPROBE/gpu-unlock.conf" ] && load_nvidia
+    return 0
+  fi
+
+  for pci in $(cfg_get targets | tr , ' '); do
+    if ! supported "$pci"; then
+      entries="$entries$pci${T}skipped${T}not a supported card${T}no$NL"
+    elif [ -n "$(pci_driver "$pci")" ]; then
+      entries="$entries$pci${T}skipped_bound${T}bound to $(pci_driver "$pci")${T}no$NL"
+    else
+      candidates="$candidates${candidates:+,}$pci"
+    fi
+  done
+
+  if [ -n "$candidates" ] && ! modinfo -k "$KERNEL" gpu_unlock > /dev/null 2>&1; then
+    for pci in $(echo "$candidates" | tr , ' '); do
+      entries="$entries$pci${T}skipped${T}no gpu_unlock package for kernel $KERNEL${T}no$NL"
+    done
+    candidates=""
+  fi
+
+  if [ -n "$candidates" ]; then
+    before=$(dmesg | wc -l)
+    log "boot: modprobe gpu_unlock targets=$candidates"
+    modprobe gpu_unlock targets="$candidates" || rc=$?
+    lines=$(dmesg | tail -n +$((before + 1)) | grep -E 'gpu_unlock|power off|WPR2')
+    [ -n "$lines" ] && printf '%s\n' "$lines" >> "$LOG"
+    for pci in $(echo "$candidates" | tr , ' '); do
+      result=$(card_result "$pci" "$lines")
+      if [ $rc -ne 0 ] && [ ! -d "$SYSFS_MODULE/gpu_unlock" ] && \
+         [ "$(printf '%s' "$result" | cut -f2)" = "no result in kernel log" ]; then
+        result=$(printf 'skipped\tgpu_unlock failed to load (%s)\tno' "$rc")
+      fi
+      entries="$entries$pci$T$result$NL"
+      [ "$(printf '%s' "$result" | cut -f3)" = yes ] && power_off=yes
+    done
+  fi
+
+  if [ $power_off = yes ]; then
+    block_nvidia
+  else
+    load_nvidia
+  fi
+
+  {
+    printf '{\n  "boot_id": %s,\n  "kernel": %s,\n  "power_off_required": %s,\n  "targets": [' \
+      "$(json_str "$id")" "$(json_str "$KERNEL")" "$([ $power_off = yes ] && echo true || echo false)"
+    printf '%s' "$entries" | awk -F '\t' -v q='"' '
+      function s(v) { gsub(/\\/, "\\\\", v); gsub(/"/, "\\\"", v); return q v q }
+      NF { printf "%s\n    {\"pci\": %s, \"state\": %s", (n++ ? "," : ""), s($1), s($2)
+           if ($3 != "") printf ", \"reason\": %s", s($3)
+           printf "}" }
+      END { if (n) printf "\n  " }'
+    printf ']\n}\n'
+  } > "$STATUS.tmp" && mv "$STATUS.tmp" "$STATUS"
+  log "boot: $(printf '%s' "$entries" | awk -F '\t' 'NF { printf "%s%s=%s", (n++ ? " " : ""), $1, $2 }')"
+}
+
+cmd_status() {
+  local pci state first=1
+  if status_is_current; then
+    cat "$STATUS"
+    return 0
+  fi
+  [ "$(cfg_get enabled)" = yes ] && state=pending || state=disabled
+  printf '{\n  "boot_id": %s,\n  "kernel": %s,\n  "power_off_required": false,\n  "targets": [' \
+    "$(json_str "$(boot_id)")" "$(json_str "$KERNEL")"
+  for pci in $(cfg_get targets | tr , ' '); do
+    [ $first = 1 ] || printf ','
+    printf '\n    {"pci": %s, "state": "%s"}' "$(json_str "$pci")" "$state"
+    first=0
+  done
+  [ $first = 1 ] || printf '\n  '
+  printf ']\n}\n'
+}
+
+cmd_disable() {
+  cfg_write no "$(cfg_get targets)"
+  rm -f "$DEFER_CONF" "$ETC_MODPROBE/gpu-unlock.conf"
+  log "disable: unlock disabled for the next boot"
+  echo "unlock disabled for the next boot"
+}
+
+case ${1:-} in
+  inspect) cmd_inspect ;;
+  prepare-boot) cmd_prepare_boot ;;
+  boot) cmd_boot ;;
+  status) cmd_status ;;
+  disable) cmd_disable ;;
+  *)
+    echo "usage: $(basename "$0") inspect|prepare-boot|boot|status|disable" >&2
+    exit 2
+    ;;
+esac

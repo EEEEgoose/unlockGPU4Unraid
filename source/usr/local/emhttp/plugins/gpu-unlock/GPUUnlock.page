@@ -1,0 +1,93 @@
+Menu="Utilities"
+Title="GPU Unlock"
+Icon="gpu-unlock.png"
+---
+<?php
+$ctl = '/usr/local/sbin/gpu-unlock-control';
+$action = '/plugins/gpu-unlock/include/settings.php';
+
+$cards = [];
+$info = [];
+exec("$ctl inspect", $lines);
+foreach ($lines as $line) {
+  $f = explode("\t", $line);
+  if ($f[0] === 'gpu') {
+    $cards[] = ['pci' => $f[1], 'id' => $f[2], 'supported' => $f[3] === 'yes', 'driver' => $f[4],
+                'selected' => $f[5] === 'yes', 'model' => $f[6] ?? ''];
+  } else {
+    $info[$f[0]] = $f[1] ?? '';
+  }
+}
+$status = json_decode(shell_exec("$ctl status") ?: '', true) ?: [];
+$results = [];
+foreach ($status['targets'] ?? [] as $t) $results[$t['pci']] = $t;
+
+$cfg = @parse_ini_file('/boot/config/plugins/gpu-unlock/settings.cfg') ?: [];
+$enabled = ($cfg['enabled'] ?? 'no') === 'yes';
+
+$labels = [
+  'disabled'      => '未启用',
+  'pending'       => '等待下次启动',
+  'unlocked'      => '已解锁',
+  'skipped_bound' => '已被驱动占用而跳过',
+  'skipped'       => '本次跳过',
+  'failed'        => '解锁失败',
+];
+$h = fn($s) => htmlspecialchars($s, ENT_QUOTES);
+?>
+<?if (!empty($status['power_off_required'])):?>
+<p class="red-text"><b>gpu_unlock 报告了需要关机断电的故障。本次启动已阻止加载 NVIDIA 驱动和生成 CDI；请先关机断电，再开机。</b></p>
+<?endif;?>
+<?if (isset($_GET['msg'])):?>
+<p><?=$h($_GET['msg'])?></p>
+<?endif;?>
+
+<form id="gpu-unlock-save" method="POST" action="<?=$action?>">
+<input type="hidden" name="csrf_token" value="<?=$var['csrf_token']?>">
+<input type="hidden" name="action" value="save">
+<table class="tablesorter">
+<thead><tr><th>解锁</th><th>PCI 地址</th><th>型号</th><th>PCI ID</th><th>支持</th><th>当前驱动</th><th>本次启动结果</th></tr></thead>
+<tbody>
+<?foreach ($cards as $c):
+  $r = $results[$c['pci']] ?? null;
+  $support = $c['supported'] ? '可解锁' : '不可解锁：不在 gpu_unlock 支持列表';
+?>
+<tr>
+<td><?if ($c['supported']):?><input type="checkbox" name="targets[]" value="<?=$h($c['pci'])?>"<?=$c['selected'] ? ' checked' : ''?>><?endif;?></td>
+<td><?=$h($c['pci'])?></td>
+<td><?=$h($c['model'])?></td>
+<td><?=$h($c['id'])?></td>
+<td><?=$support?></td>
+<td><?=$c['driver'] === 'none' ? '未绑定' : $h($c['driver'])?></td>
+<td><?=$r ? $h($labels[$r['state']] ?? $r['state']).(isset($r['reason']) ? '：'.$h($r['reason']) : '') : '—'?></td>
+</tr>
+<?endforeach;?>
+</tbody>
+</table>
+
+<dl>
+<dt>下次启动解锁</dt>
+<dd><select name="enabled">
+<option value="no"<?=$enabled ? '' : ' selected'?>>否</option>
+<option value="yes"<?=$enabled ? ' selected' : ''?>>是</option>
+</select></dd>
+<dt>内核</dt><dd><?=$h($info['kernel'] ?? '')?></dd>
+<dt>模块包</dt><dd><?=$h(($info['kmod_package'] ?? '') ?: '缺少当前内核的包，本次启动会跳过解锁')?></dd>
+<dt>固件包</dt><dd><?=$h(($info['firmware_package'] ?? '') ?: '缺少')?></dd>
+<dt>下次启动</dt><dd><?=($info['deferred'] ?? '') === 'yes' ? '已安排解锁' : '不解锁'?></dd>
+</dl>
+<p>保存只改变下次启动的配置，不会在线解锁。关闭插件或卸载后，已经生效的解锁状态要关机断电才会恢复。</p>
+</form>
+
+<form id="gpu-unlock-disable" method="POST" action="<?=$action?>">
+<input type="hidden" name="csrf_token" value="<?=$var['csrf_token']?>">
+<input type="hidden" name="action" value="disable">
+</form>
+
+<div style="text-align:center">
+<input type="submit" form="gpu-unlock-save" value="保存下次启动配置">
+<input type="button" value="刷新状态" onclick="location.reload()">
+<input type="button" value="下载日志" onclick="location.href='<?=$action?>?action=log'">
+<input type="submit" form="gpu-unlock-disable" value="关闭解锁">
+</div>
+<p style="text-align:center">本插件基于 <a href="https://github.com/Zagitta/gpu-unlock" target="_blank" rel="noopener noreferrer">Zagitta/gpu-unlock</a> 开发</p>
