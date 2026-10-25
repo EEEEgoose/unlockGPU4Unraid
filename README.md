@@ -18,14 +18,16 @@
 RTX 3080 20 GB，功耗上限 240 W，驱动 615.71.09，PyTorch 2.13 / CUDA 13.0。
 测试为 8192³ 稠密 GEMM，FP16/BF16 使用 FP32 累加，取 5 次中位数，脚本是 [bench/gemm.py](bench/gemm.py)。
 
-| 显卡 | 精度 | 解锁后 | 平均 SM 频率 | 同频未解锁理论上限 | 提升 |
+| 显卡 | 精度 | 解锁后 | 平均 SM 频率 | 同频未解锁理论上限 | 提升幅度 |
 |---|---|---|---|---|---|
-| `cc:00.0` | FP16 | 95.74 TFLOPS | 1431 MHz | 49.8 TFLOPS | ×1.92 |
-| `cc:00.0` | BF16 | 97.68 TFLOPS | 1445 MHz | 50.3 TFLOPS | ×1.94 |
-| `cc:00.0` | TF32 | 46.00 TFLOPS | 1406 MHz | 24.5 TFLOPS | ×1.88 |
-| `cd:00.0` | FP16 | 93.81 TFLOPS | 1410 MHz | 49.1 TFLOPS | ×1.91 |
-| `cd:00.0` | BF16 | 96.68 TFLOPS | 1449 MHz | 50.4 TFLOPS | ×1.92 |
-| `cd:00.0` | TF32 | 46.21 TFLOPS | 1390 MHz | 24.2 TFLOPS | ×1.91 |
+| `cc:00.0` | FP16 | 95.74 TFLOPS | 1431 MHz | 49.8 TFLOPS | +92% |
+| `cc:00.0` | BF16 | 97.68 TFLOPS | 1445 MHz | 50.3 TFLOPS | +94% |
+| `cc:00.0` | TF32 | 46.00 TFLOPS | 1406 MHz | 24.5 TFLOPS | +88% |
+| `cd:00.0` | FP16 | 93.81 TFLOPS | 1410 MHz | 49.1 TFLOPS | +91% |
+| `cd:00.0` | BF16 | 96.68 TFLOPS | 1449 MHz | 50.4 TFLOPS | +92% |
+| `cd:00.0` | TF32 | 46.21 TFLOPS | 1390 MHz | 24.2 TFLOPS | +91% |
+
+提升幅度 = 解锁后 ÷ 同频未解锁理论上限 − 1。
 
 “同频未解锁理论上限”不是实测值，是按 NVIDIA 公布的 RTX 3080 规格，折算到测试时的平均频率得到的：
 GeForce 版 FP16/BF16（FP32 累加）为 59.5 TFLOPS、TF32 为 29.8 TFLOPS，均对应 1710 MHz。
