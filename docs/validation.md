@@ -16,6 +16,7 @@
 | 上游测试 | `make test` 5 项通过 |
 | 产物 | `gpu-unlock-kmod-1.0.0_6.18.54_Unraid-x86_64-1.txz`，sha256 `06e2e1eb4f0c922c6b6c9e9579a4732db77a952a444f00d40542a36f42044d40`<br>`gpu-unlock-firmware-610.43.03-noarch-1.txz`，sha256 `481f050082fc96ca3f7d3e03729a531a9ae7e26d41c7e0817d5271bbc2472d1a`<br>位于服务器 `/mnt/zpool/build/gpu-unlock/out/` |
 | 补丁 | 无（上游源码未改动） |
+| 按教程重新编译 | 2026-10-25，在空目录中按 `docs/build-docker.zh-CN.md` 第 1–2 步执行：从 GitHub 下载 `main`（`fa9b030`），使用镜像和代理运行 `unraid-container.sh`，`BUILD_EXIT=0`，一次得到 kmod、firmware、ui 三个包。与上面的产物相比，包内的 `gpu_unlock.ko`、5 个固件文件和许可文件 sha256 逐一相同；整包 sha256 不同，只是因为 tar 记录的文件时间不同 |
 | 运行内核加载 | 2026-10-25，在运行中的 `6.18.54-Unraid` 上不带 `targets` 执行 `insmod`：返回 0，`targets=(null)`，没有新增内核日志（没有未解析符号、vermagic、taint 告警），也没有触碰显卡；随后 `rmmod` 返回 0。四张 GPU 的状态与显存占用与加载前相同 |
 
 ## 编排测试（Task 3）
