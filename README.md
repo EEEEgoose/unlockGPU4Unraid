@@ -5,13 +5,32 @@
 
 ## 支持范围
 
-当前尚未在实机上完成验证（见 [docs/validation.md](docs/validation.md)）。首个目标环境：
+已实测的环境（详见 [docs/validation.md](docs/validation.md)）：
 
-- Unraid 7.3.3，内核 `6.18.54-Unraid`，x86_64
-- RTX 3080（`10de:2206`），`0000:cc:00.0`、`0000:cd:00.0`
+- Unraid 7.3.3，内核 `6.18.54-Unraid`，x86_64，NVIDIA 驱动 615.71.09
+- 两张 RTX 3080 20 GB（`10de:2206`，改装显存），开机解锁成功，NVIDIA 正常接管四张卡
 
 “上游支持该 PCI ID”不等于“该板卡已实测”。RTX 2080 Ti 等非 Ampere 显卡会显示为不支持，不能选择。
 插件只使用与当前 `uname -r` 完全一致的模块包；找不到时，本次启动跳过解锁，NVIDIA 照常加载。
+
+## 实测性能
+
+RTX 3080 20 GB，功耗上限 240 W，驱动 615.71.09，PyTorch 2.13 / CUDA 13.0。
+测试为 8192³ 稠密 GEMM，FP16/BF16 使用 FP32 累加，取 5 次中位数，脚本是 [bench/gemm.py](bench/gemm.py)。
+
+| 显卡 | 精度 | 解锁后 | 平均 SM 频率 | 同频未解锁理论上限 | 提升 |
+|---|---|---|---|---|---|
+| `cc:00.0` | FP16 | 95.74 TFLOPS | 1431 MHz | 49.8 TFLOPS | ×1.92 |
+| `cc:00.0` | BF16 | 97.68 TFLOPS | 1445 MHz | 50.3 TFLOPS | ×1.94 |
+| `cc:00.0` | TF32 | 46.00 TFLOPS | 1406 MHz | 24.5 TFLOPS | ×1.88 |
+| `cd:00.0` | FP16 | 93.81 TFLOPS | 1410 MHz | 49.1 TFLOPS | ×1.91 |
+| `cd:00.0` | BF16 | 96.68 TFLOPS | 1449 MHz | 50.4 TFLOPS | ×1.92 |
+| `cd:00.0` | TF32 | 46.21 TFLOPS | 1390 MHz | 24.2 TFLOPS | ×1.91 |
+
+“同频未解锁理论上限”不是实测值，是按 NVIDIA 公布的 RTX 3080 规格，折算到测试时的平均频率得到的：
+GeForce 版 FP16/BF16（FP32 累加）为 59.5 TFLOPS、TF32 为 29.8 TFLOPS，均对应 1710 MHz。
+解锁后的实测值已经超过这个上限，达到全速理论值的 94–97%。
+未解锁的实测基线还没有测；补测之后，这里会换成实测对比。
 
 ## 构建
 

@@ -37,5 +37,6 @@
 | 两张 3080 同时启用（17:07 重启，非断电冷启动，boot `99b9b274`） | udev 冷插（17:07:40）时没有加载 nvidia；`gpu-unlock.plg`（17:08:52）一次调用 `modprobe gpu_unlock targets=0000:cc:00.0,0000:cd:00.0`；`cc`、`cd` 在 122.30 s 报告 `gpu_unlock: unlocked`，post-FLR 读回 `SS0=88888888 SS1=00000008`；`NVRM: loading 615.71.09` 在 130.23 s，之后 nvidia-drm 依次初始化四张卡；四张卡都绑定 `nvidia`，容器重新占用显存；本次启动没有 Xid；页面/状态记录两卡均为 `unlocked` |
 | 原计划“先单卡再双卡” | 用户直接选择了两张卡，单卡阶段跳过 |
 | 再次冷启动、关闭后冷启动 | 待验证 |
-| 解锁后性能 | 待验证；本次启动时 `GPU-nvidia-smi-setting` 尚未运行，功耗上限为默认值（3080 320 W、2080 Ti 250 W） |
+| 解锁后 GEMM（boot `99b9b274`，运行 `GPU-nvidia-smi-setting` 后 3080 为 240 W，strata 已停止） | `bench/gemm.py`，8192³，5 次中位数：`cc` FP16 95.74、BF16 97.68、TF32 46.00 TFLOPS；`cd` FP16 93.81、BF16 96.68、TF32 46.21 TFLOPS。按 3080 规格折算到实测平均频率，约为未解锁理论上限的 1.88–1.94 倍。解锁前基线未测 |
+| strata qwen3.8-flash-next prefill/decode | 待验证 |
 | 显存容量 | 两张 RTX 3080 均为 20480 MiB（改装 20 GB 版），功耗上限 240 W；两张 2080 Ti 为 22528 MiB、190 W（2026-10-25 `nvidia-smi`） |
