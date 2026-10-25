@@ -1,24 +1,33 @@
 # GPU Unlock for Unraid
 
-在 NVIDIA 驱动接管之前，对选定的 Ampere 显卡运行 [Zagitta/gpu-unlock](https://github.com/Zagitta/gpu-unlock)，
-解锁 FP16/BF16 指令发射速率。NVIDIA 驱动、容器工具包和 CDI 仍由 NVIDIA Driver 插件负责。
+English | [简体中文](README.zh-CN.md)
 
-## 支持范围
+Runs [Zagitta/gpu-unlock](https://github.com/Zagitta/gpu-unlock) on the Ampere cards you select, before the NVIDIA
+driver takes them, to unlock their FP16/BF16 instruction issue rate. The NVIDIA Driver plugin still provides the
+driver, the container toolkit and CDI.
 
-已实测的环境（详见 [docs/validation.md](docs/validation.md)）：
+This plugin is built on [Zagitta/gpu-unlock](https://github.com/Zagitta/gpu-unlock): the unlock and the firmware
+generation come from upstream. The plugin orders the boot on Unraid, records the results and provides a settings page.
 
-- Unraid 7.3.3，内核 `6.18.54-Unraid`，x86_64，NVIDIA 驱动 615.71.09
-- 两张 RTX 3080 20 GB（`10de:2206`，改装显存），开机解锁成功，NVIDIA 正常接管四张卡
+## Support
 
-“上游支持该 PCI ID”不等于“该板卡已实测”。RTX 2080 Ti 等非 Ampere 显卡会显示为不支持，不能选择。
-插件只使用与当前 `uname -r` 完全一致的模块包；找不到时，本次启动跳过解锁，NVIDIA 照常加载。
+Tested on (details in [docs/validation.md](docs/validation.md), in Chinese):
 
-## 实测性能
+- Unraid 7.3.3, kernel `6.18.54-Unraid`, x86_64, NVIDIA driver 615.71.09
+- Two RTX 3080 20 GB (`10de:2206`, memory-modded): unlocked at boot, with NVIDIA then driving all four cards
+  (two RTX 2080 Ti in the same machine are not unlock targets)
 
-RTX 3080 20 GB，功耗上限 240 W，驱动 615.71.09，PyTorch 2.13 / CUDA 13.0。
-测试为 8192³ 稠密 GEMM，FP16/BF16 使用 FP32 累加，取 5 次中位数，脚本是 [bench/gemm.py](bench/gemm.py)。
+The selectable cards are upstream's: GeForce GA102/GA103/GA104/GA106. A supported PCI ID does not mean that board has
+been tested. Other NVIDIA cards, such as the RTX 2080 Ti, show as not unlockable and cannot be selected.
+The plugin only uses a module package built for exactly the running `uname -r`; without one, it skips the unlock for
+that boot and NVIDIA loads as usual.
 
-| 显卡 | 精度 | 解锁后 | 平均 SM 频率 | 同频未解锁理论上限 | 提升幅度 |
+## Measured performance
+
+RTX 3080 20 GB, 240 W power limit, driver 615.71.09, PyTorch 2.13 / CUDA 13.0.
+Dense 8192³ GEMM, FP16/BF16 with FP32 accumulation, median of 5 runs, using [bench/gemm.py](bench/gemm.py).
+
+| Card | Precision | Unlocked | Mean SM clock | Locked peak at that clock | Gain |
 |---|---|---|---|---|---|
 | `cc:00.0` | FP16 | 95.74 TFLOPS | 1431 MHz | 49.8 TFLOPS | +92% |
 | `cc:00.0` | BF16 | 97.68 TFLOPS | 1445 MHz | 50.3 TFLOPS | +94% |
@@ -27,68 +36,71 @@ RTX 3080 20 GB，功耗上限 240 W，驱动 615.71.09，PyTorch 2.13 / CUDA 13.
 | `cd:00.0` | BF16 | 96.68 TFLOPS | 1449 MHz | 50.4 TFLOPS | +92% |
 | `cd:00.0` | TF32 | 46.21 TFLOPS | 1390 MHz | 24.2 TFLOPS | +91% |
 
-提升幅度 = 解锁后 ÷ 同频未解锁理论上限 − 1。
+Gain = unlocked ÷ locked peak at that clock − 1.
 
-“同频未解锁理论上限”不是实测值，是按 NVIDIA 公布的 RTX 3080 规格，折算到测试时的平均频率得到的：
-GeForce 版 FP16/BF16（FP32 累加）为 59.5 TFLOPS、TF32 为 29.8 TFLOPS，均对应 1710 MHz。
-解锁后的实测值已经超过这个上限，达到全速理论值的 94–97%。
-未解锁的实测基线还没有测；补测之后，这里会换成实测对比。
+The locked peak is not a measurement. It is NVIDIA's published RTX 3080 figure scaled to the mean clock of the run:
+GeForce FP16/BF16 with FP32 accumulation is 59.5 TFLOPS and TF32 is 29.8 TFLOPS, both at 1710 MHz.
+The unlocked results exceed that ceiling and reach 94–97% of the full-rate figure.
+A measured locked baseline has not been taken yet; it will replace the computed one here.
 
-## 构建
+## Install
 
-```bash
-# Linux x86_64，需要目标 Unraid 内核的已准备好的构建树
-build/build.sh --src /path/to/gpu-unlock --kdir /path/to/unraid-6.18.54 --kernel 6.18.54-Unraid
-# 任意平台
-build/package.sh
-```
+This repository does not distribute the firmware (see "Firmware and licensing" below), so you build the module and
+firmware packages on your own server with Docker. The full steps are in
+**[Building the module and firmware with Docker](docs/build-docker.md)**. In short:
 
-产物位于 `build/out/`：
+1. In the Unraid terminal, download this repository and run `repo/build/unraid-container.sh <work dir>` to get three
+   `.txz` packages.
+2. Copy them to `config/plugins/gpu-unlock/packages/` on the flash drive.
+3. Install `gpu-unlock.plg` with `plugin install`.
+4. Open **Settings → Utilities → GPU Unlock**, tick the cards to unlock, set "unlock at next boot" to yes and save.
+5. Power cycle the server.
 
-```text
-gpu-unlock-ui-<插件版本>-x86_64-1.txz
-gpu-unlock-kmod-1.0.0_6.18.54_Unraid-x86_64-1.txz
-gpu-unlock-firmware-610.43.03-noarch-1.txz
-```
+The plugin starts disabled. Saving only changes the next boot; nothing is unlocked while the server runs.
+The settings page is currently in Chinese only.
 
-固件由构建流程从上游固定的 NVIDIA 输入生成，不提交到本仓库。公开分发前，需要先按上游 `firmware/NOTICE.md` 确定分发方式。
+## What the results mean
 
-## 安装（本地验证）
-
-1. 把三个 `.txz` 复制到 U 盘的 `config/plugins/gpu-unlock/packages/`。
-2. 把 `gpu-unlock.plg` 复制到 `config/plugins/`，然后在“插件 → 安装插件”中填入 `/boot/config/plugins/gpu-unlock.plg`。
-3. 打开“设置 → GPU Unlock”，勾选要解锁的显卡，“下次启动解锁”选“是”，点击保存。
-4. 冷启动。
-
-安装后默认不启用。保存只改变下次启动的配置，不会在线解锁。
-
-## 结果含义
-
-| 状态 | 含义 |
+| State | Meaning |
 |---|---|
-| 未启用 | 配置为不解锁 |
-| 等待下次启动 | 已启用，但本次启动还没有执行记录 |
-| 已解锁 | 本次启动内核日志报告该卡 `gpu_unlock: unlocked` |
-| 已被驱动占用而跳过 | 执行时该卡已绑定驱动；不会解绑或重试 |
-| 本次跳过 | 缺少当前内核的模块包、模块加载失败，或地址不受支持；没有触碰硬件 |
-| 解锁失败 | 该卡报告了失败，原因显示在后面；不会自动重试 |
+| Disabled | Unlock is turned off |
+| Pending next boot | Enabled, but this boot has no record yet |
+| Unlocked | The kernel log of this boot reports `gpu_unlock: unlocked` for the card |
+| Skipped, bound to a driver | The card already had a driver when the unlock ran; it is not unbound or retried |
+| Skipped | No module package for this kernel, the module failed to load, or the address is not supported; the hardware was not touched |
+| Failed | The card reported a failure, shown with its reason; it is not retried |
 
-`modprobe gpu_unlock` 成功并不代表解锁成功，每张卡的状态只来自本次调用新增的、带该卡 PCI 地址的内核日志。
+A successful `modprobe gpu_unlock` does not mean the unlock succeeded. Each card's state comes only from the kernel log
+lines that this load added and that carry the card's PCI address.
 
-如果页面提示“需要关机断电”，说明 gpu_unlock 报告固件未停止或卡已被初始化。此时本次启动已阻止加载 NVIDIA、也没有生成 CDI。请关机断电后再开机，不要只重启。
+If the page says a power off is required, gpu_unlock reported that the firmware did not stop or that the card had
+already been initialised. NVIDIA was then not loaded for this boot and no CDI was generated. Power the server off and
+on again; a reboot is not enough.
 
-## 关闭、卸载与恢复
+## Disable, uninstall and recovery
 
-- **关闭解锁**：下次启动不再解锁，NVIDIA 按原方式在早期加载。
-- **卸载**：撤销本插件的启动改动，删除本插件的文件和配置。
-- 关闭或卸载都不会立即恢复已经生效的锁定状态。要恢复，需关机断电。
-- WebUI 不可用时：删除 U 盘上的 `config/modprobe.d/gpu-unlock.conf`，然后重启。
+- **Disable**: the next boot does not unlock, and NVIDIA loads early as before.
+- **Uninstall**: removes the plugin's boot changes, files and settings.
+- Neither restores the locked state right away. Power the server off to relock the cards.
+- Without the web UI: delete `config/modprobe.d/gpu-unlock.conf` on the flash drive and reboot.
 
-工作原理和启动顺序见 [docs/boot-integration.md](docs/boot-integration.md)。
+How the boot is ordered: [docs/boot-integration.md](docs/boot-integration.md) (in Chinese).
 
-## 测试
+## Firmware and licensing
+
+- The code in this repository (plugin, build scripts, tests) is released under [GPL-2.0](LICENSE), like upstream.
+- The module is built from upstream's `GPL-2.0-only` source at commit `af28cbbfd3d922a659227ecfb7369adfd924cf03`;
+  the build scripts and the source of the Unraid kernel patches are in this repository.
+- The firmware contains NVIDIA binaries covered by the NVIDIA driver license, and upstream claims no redistribution
+  approval (see upstream `firmware/NOTICE.md`). This repository therefore **neither contains nor distributes the
+  firmware**. The build generates it on your server from NVIDIA's own files, for your own use. Do not redistribute it.
+
+## Development
 
 ```bash
 bash tests/test-boot.sh
 bash tests/test-status.sh
 ```
+
+The tests replay the boot sequence and log parsing with stub commands; no hardware is involved. Design documents (in
+Chinese) are in [docs/design/](docs/design/).

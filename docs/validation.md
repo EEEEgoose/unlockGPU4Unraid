@@ -8,7 +8,7 @@
 |---|---|
 | 上游源码 | `Zagitta/gpu-unlock` 1.0.0，commit `af28cbbfd3d922a659227ecfb7369adfd924cf03`（2026-10-24） |
 | 固件资源 | `gpu-unlock/610.43.03/` 下 5 个文件（`unlock_610.c` 中的 `MODULE_FIRMWARE`） |
-| 构建环境 | 2026-10-25，HomeMonster 上的临时 `archlinux:latest` 容器（`build/unraid-container.sh`）：gcc 16.2.1 20260810、GNU ld 2.47、Python 3.14.8；宿主机未安装工具链 |
+| 构建环境 | 2026-10-25，验证服务器上的临时 `archlinux:latest` 容器（`build/unraid-container.sh`）：gcc 16.2.1 20260810、GNU ld 2.47、Python 3.14.8；宿主机未安装工具链 |
 | 内核树 | kernel.org `linux-6.18.54.tar.xz`（清华镜像，sha256 校验通过），加上 `/usr/src/linux-6.18.54-Unraid` 中的 10 个补丁（6 处 fuzz/offset，全部成功）、`drivers/md` 中的 Unraid 文件和 `config`；`olddefconfig` 后与 Unraid 配置一致，差异仅限编译器版本（160201 对 160200）和 Rust 探测项；`modules_prepare` |
 | 符号 | 内核未开启 `CONFIG_MODVERSIONS` 和模块签名，因此不需要 `Module.symvers`；模块导入的 61 个符号全部能在 `System.map` 中找到对应的 `__ksymtab_*` 导出项 |
 | vermagic | `6.18.54-Unraid SMP preempt mod_unload`，与运行中的 `nvidia`、`zfs` 模块一致 |

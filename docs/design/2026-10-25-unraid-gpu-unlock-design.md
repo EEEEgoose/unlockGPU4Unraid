@@ -6,7 +6,7 @@
 
 开发独立的 `gpu-unlock` Unraid 插件，复用 Zagitta/gpu-unlock 内核模块，对用户选定的受支持 GPU 在 NVIDIA 驱动接管之前解锁。NVIDIA Driver 插件继续负责 NVIDIA 驱动及容器工具包。
 
-首个验证环境为 HomeMonster：Unraid 7.3.3、Linux `6.18.54-Unraid`、x86_64。用户已确认 NVIDIA 组件版本问题修复，开发不再以历史版本冲突为故障前提。
+首个验证环境：Unraid 7.3.3、Linux `6.18.54-Unraid`、x86_64。用户已确认 NVIDIA 组件版本问题修复，开发不再以历史版本冲突为故障前提。
 
 | PCI 地址 | PCI ID | 型号 | 首版行为 |
 |---|---|---|---|

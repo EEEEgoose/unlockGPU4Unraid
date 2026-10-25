@@ -11,7 +11,7 @@
 # then used without network access to GitHub.
 #
 # The kernel tree is kernel.org source plus Unraid's patches and config from
-# /usr/src/linux-<release>; packages end up in WORK_DIR/out.
+# /usr/src/linux-<release>; the module, firmware and UI packages end up in WORK_DIR/out.
 set -euo pipefail
 
 UPSTREAM=https://github.com/Zagitta/gpu-unlock.git
@@ -61,6 +61,7 @@ inside() {
   # No CONFIG_MODVERSIONS, so no Module.symvers: imports are checked against System.map instead.
   KBUILD_MODPOST_WARN=1 /repo/build/build.sh --src /work/gpu-unlock --kdir /work/linux \
     --kernel "$KERNEL" --system-map /unraid/System.map --out /work/out
+  /repo/build/package.sh --out /work/out
 }
 
 if [ "${1:-}" = --inside ]; then

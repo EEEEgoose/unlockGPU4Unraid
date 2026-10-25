@@ -4,7 +4,7 @@
 >
 > 上述是 writing-plans 技能要求保留的执行提示。当前会话未提供这两个执行技能；实施时使用实际可用的工作流逐项执行，不把缺失技能当作已安装。本次仅设计，不派发执行或子代理。
 
-**Goal:** 为 HomeMonster 的两张 RTX 3080 开发可验证、可卸载的 Unraid GPU Unlock 插件。
+**Goal:** 为验证服务器上的两张 RTX 3080 开发可验证、可卸载的 Unraid GPU Unlock 插件。
 
 **Architecture:** 独立插件复用上游内核模块与固件，针对完整 Unraid 内核版本构建软件包。先确认并协调真实的 NVIDIA 加载入口，确保解锁先于驱动接管；NVIDIA Driver 插件继续管理 NVIDIA 软件包和容器工具。
 
