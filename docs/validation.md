@@ -41,3 +41,6 @@
 | 解锁后 GEMM（boot `99b9b274`，运行 `GPU-nvidia-smi-setting` 后 3080 为 240 W，strata 已停止） | `bench/gemm.py`，8192³，5 次中位数：`cc` FP16 95.74、BF16 97.68、TF32 46.00 TFLOPS；`cd` FP16 93.81、BF16 96.68、TF32 46.21 TFLOPS。按 3080 规格折算到实测平均频率，比未解锁理论上限高 88–94%。解锁前基线未测 |
 | strata qwen3.8-flash-next prefill/decode | 待验证 |
 | 显存容量 | 两张 RTX 3080 均为 20480 MiB（改装 20 GB 版），功耗上限 240 W；两张 2080 Ti 为 22528 MiB、190 W（2026-10-25 `nvidia-smi`） |
+| 内核升级后启动（2026-10-27，Unraid 7.3.4，`6.18.58-Unraid`，NVIDIA 615.78.08，boot `9f470a5c`） | 插件已关闭、没有屏蔽规则；插件照常安装，日志为 `no module or firmware package for kernel 6.18.58-Unraid; unlock skipped`；NVIDIA 正常加载四张卡 |
+| 从 GitHub 安装 `2026.10.27` | 经代理执行 `plugin install <pluginURL>`：下载 plg 与 Release 中的 UI 包，U 盘缓存的包 MD5 为 `47d78b05a28af7ac9cf6045285430662`，与 plg 一致；旧的 `2026.10.25a` UI 包被清除；`plugin check` 返回 `2026.10.27` |
+| `6.18.58-Unraid` 的模块包 | 待编译 |
