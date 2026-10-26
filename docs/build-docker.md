@@ -32,9 +32,14 @@ Run the commands below as root in the Unraid terminal.
 ```bash
 mkdir -p /mnt/cache/build/gpu-unlock
 cd /mnt/cache/build/gpu-unlock
+rm -rf repo unlockGPU4Unraid-main
 curl -fL https://github.com/EEEEgoose/unlockGPU4Unraid/archive/refs/heads/main.tar.gz | tar -xz
 mv unlockGPU4Unraid-main repo
 ```
+
+The second line removes the source downloaded last time, so the `repo/` used below is always this download. The rest
+of the work directory stays and is reused by the next build: `out/`, the kernel tarball, `pacman-cache/` and the
+upstream `gpu-unlock/` clone.
 
 ## 2. Build
 

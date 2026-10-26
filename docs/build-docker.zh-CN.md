@@ -32,9 +32,12 @@
 ```bash
 mkdir -p /mnt/cache/build/gpu-unlock
 cd /mnt/cache/build/gpu-unlock
+rm -rf repo unlockGPU4Unraid-main
 curl -fL https://github.com/EEEEgoose/unlockGPU4Unraid/archive/refs/heads/main.tar.gz | tar -xz
 mv unlockGPU4Unraid-main repo
 ```
+
+第二行会删掉上次下载的旧源码，保证后面用的 `repo/` 一定是这次下载的新版本。工作目录里的其他内容会保留，再次编译时可以直接复用：编译产物 `out/`、内核源码包、`pacman-cache/` 和上游 `gpu-unlock/`。
 
 ## 2. 编译
 

@@ -210,13 +210,17 @@ cmd_prepare_boot() {
     echo "no gpu_unlock module or firmware package for kernel $KERNEL in $PKG_DIR" >&2
     return 1
   fi
-  mkdir -p "$BOOT_MODPROBE"
-  {
+  # Written whole or not at all: without this rule NVIDIA binds before the unlock.
+  if ! mkdir -p "$BOOT_MODPROBE" || ! {
     echo "# gpu-unlock: nvidia is loaded by gpu-unlock-control boot once the unlock has run"
     for m in $NVIDIA_MODULES; do
       echo "blacklist $m"
     done
-  } > "$DEFER_CONF"
+  } > "$DEFER_CONF.tmp" || ! mv "$DEFER_CONF.tmp" "$DEFER_CONF"; then
+    rm -f "$DEFER_CONF.tmp"
+    echo "cannot write $DEFER_CONF; unlock not scheduled" >&2
+    return 1
+  fi
   log "prepare-boot: unlock of $(cfg_get targets) scheduled for the next boot"
   echo "unlock of $(cfg_get targets) scheduled for the next boot"
 }

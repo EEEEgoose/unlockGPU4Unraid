@@ -45,6 +45,17 @@ check "prepare-boot defers every nvidia module" \
   "blacklist nvidia blacklist nvidia_uvm blacklist nvidia_modeset blacklist nvidia_drm blacklist nvidia_peermem" \
   "$(grep -v '^#' "$W/boot/modprobe.d/gpu-unlock.conf" | tr '\n' ' ' | sed 's/ $//')"
 check "prepare-boot touches no hardware" "" "$(events)"
+# The flash refuses the rule: no success message, non-zero exit, no partial file.
+if [ "$(id -u)" != 0 ]; then
+  rm -f "$W/boot/modprobe.d/gpu-unlock.conf"
+  chmod 555 "$W/boot/modprobe.d"
+  out=$("$CONTROL" prepare-boot 2> /dev/null)
+  check "prepare-boot write failure exits non-zero" 1 "$?"
+  check "prepare-boot write failure reports no success" "" "$out"
+  check "prepare-boot write failure leaves no rule" no "$(ls "$W/boot/modprobe.d" | grep -q gpu-unlock && echo yes || echo no)"
+  chmod 755 "$W/boot/modprobe.d"
+  "$CONTROL" prepare-boot > /dev/null
+fi
 "$CONTROL" disable > /dev/null
 check "disable removes the deferral" no "$([ -f "$W/boot/modprobe.d/gpu-unlock.conf" ] && echo yes || echo no)"
 check "disable keeps the selection" 'enabled="no" targets="0000:cc:00.0,0000:cd:00.0"' "$(tr '\n' ' ' < "$GPU_UNLOCK_PLUGIN_DIR/settings.cfg" | sed 's/ $//')"

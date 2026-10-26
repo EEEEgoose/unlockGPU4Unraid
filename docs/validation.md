@@ -21,7 +21,7 @@
 
 ## 编排测试（Task 3）
 
-2026-10-25，macOS bash 3.2：`bash tests/test-boot.sh` 42 项、`bash tests/test-status.sh` 18 项全部通过。
+2026-10-25，macOS bash 3.2：`bash tests/test-boot.sh` 45 项、`bash tests/test-status.sh` 18 项全部通过。
 另做了变异检查：去掉阻断规则、去掉新增日志边界、去掉断电判据，测试分别报告 8、3、8 项失败。
 这些测试只验证脚本编排和结果解释，不能证明硬件解锁成功。
 

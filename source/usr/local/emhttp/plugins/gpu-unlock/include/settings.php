@@ -30,11 +30,14 @@ if ($action === 'save') {
   $targets = array_values(array_intersect($supported, (array)($_POST['targets'] ?? [])));
   $enabled = ($_POST['enabled'] ?? '') === 'yes' && $targets ? 'yes' : 'no';
   @mkdir($plugin, 0777, true);
-  file_put_contents("$plugin/settings.cfg", "enabled=\"$enabled\"\ntargets=\"".implode(',', $targets)."\"\n");
-  exec("$ctl prepare-boot 2>&1", $out, $rc);
-  if ($rc !== 0) {
-    exec("$ctl disable");
-    $out[] = '未启用。';
+  if (file_put_contents("$plugin/settings.cfg", "enabled=\"$enabled\"\ntargets=\"".implode(',', $targets)."\"\n") === false) {
+    $out[] = '无法写入 settings.cfg，配置未保存。';
+  } else {
+    exec("$ctl prepare-boot 2>&1", $out, $rc);
+    if ($rc !== 0) {
+      exec("$ctl disable");
+      $out[] = '未启用。';
+    }
   }
 } elseif ($action === 'disable') {
   exec("$ctl disable 2>&1", $out);
