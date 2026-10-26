@@ -2,13 +2,13 @@
 
 English | [简体中文](build-docker.zh-CN.md)
 
-The plugin needs three packages in `config/plugins/gpu-unlock/packages/` on the flash drive:
+The plugin uses three packages in `config/plugins/gpu-unlock/packages/` on the flash drive. You build the module and firmware packages as described here; the UI package needs no build:
 
 | Package | Contents | Rebuild when |
 |---|---|---|
 | `gpu-unlock-kmod-…_<kernel>-x86_64-1.txz` | The `gpu_unlock.ko` kernel module | Unraid ships a new kernel |
 | `gpu-unlock-firmware-610.43.03-noarch-1.txz` | The five firmware files the unlock loads onto the card | Upstream gpu-unlock moves to another firmware version |
-| `gpu-unlock-ui-<plugin version>-x86_64-1.txz` | Control script and settings page | The plugin is updated |
+| `gpu-unlock-ui-<plugin version>-x86_64-1.txz` | Control script and settings page | Never: installing or updating the plugin downloads it from GitHub Releases and checks its MD5 |
 
 The firmware contains NVIDIA binaries, so this repository does not distribute it: you build the module and firmware packages on your own server. The build generates the firmware from NVIDIA's own files, for your own use; do not redistribute it.
 
@@ -64,7 +64,7 @@ The script runs these steps in order and stops at the first failed check, so it 
 2. Downloads the kernel source and checks its sha256, applies Unraid's patches from `/usr/src`, and runs `olddefconfig` with Unraid's config. The resulting `.config` must match Unraid's except for the compiler version and the Rust probes.
 3. Downloads upstream gpu-unlock at a pinned commit, builds the module, generates the firmware and runs the upstream tests.
 4. Checks that the module's vermagic matches the running kernel and that every symbol it imports is in `System.map`.
-5. Writes the three packages.
+5. Writes the module and firmware packages.
 
 The first build takes about 10–20 minutes, mostly downloads. The container uses at most 16 CPU cores at low priority.
 
@@ -75,9 +75,15 @@ cd /mnt/cache/build/gpu-unlock
 ls out/
 mkdir -p /boot/config/plugins/gpu-unlock/packages
 cp out/*.txz /boot/config/plugins/gpu-unlock/packages/
-cp repo/gpu-unlock.plg /tmp/gpu-unlock.plg
-plugin install /tmp/gpu-unlock.plg
+plugin install https://raw.githubusercontent.com/EEEEgoose/unlockGPU4Unraid/main/gpu-unlock.plg
 ```
+
+You can also paste the plg URL into **Plugins → Install Plugin** in the web UI. The install downloads the UI package
+from GitHub Releases into the same directory, so later boots need no network. If the server cannot reach GitHub, configure
+Unraid's outgoing proxy first, or prefix `plugin install` with `https_proxy=…` in the terminal.
+
+Plugin updates then show up under "Check for updates" on the **Plugins** page and install from there. They do not
+require rebuilding the module and firmware packages.
 
 The plugin starts disabled. Open **Settings → Utilities → GPU Unlock**, tick the cards to unlock, set "unlock at next boot" to yes, save, and power cycle the server.
 
@@ -92,4 +98,4 @@ rm -rf /mnt/cache/build/gpu-unlock
 docker rmi archlinux:latest
 ```
 
-Keep the three packages in `config/plugins/gpu-unlock/packages/` on the flash drive: they are installed from there on every boot.
+Keep the packages in `config/plugins/gpu-unlock/packages/` on the flash drive: they are installed from there on every boot.

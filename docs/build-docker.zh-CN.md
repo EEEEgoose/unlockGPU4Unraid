@@ -2,13 +2,13 @@
 
 [English](build-docker.md) | 简体中文
 
-插件需要三个包，全部放在 U 盘的 `config/plugins/gpu-unlock/packages/` 下：
+插件用到三个包，全部放在 U 盘的 `config/plugins/gpu-unlock/packages/` 下。其中模块包和固件包需要按本文编译，UI 包不用：
 
 | 包 | 内容 | 什么时候需要重新编译 |
 |---|---|---|
 | `gpu-unlock-kmod-…_<内核>-x86_64-1.txz` | 内核模块 `gpu_unlock.ko` | 每次 Unraid 升级内核后 |
 | `gpu-unlock-firmware-610.43.03-noarch-1.txz` | 解锁时加载到显卡上的 5 个固件文件 | 上游 gpu-unlock 更新固件版本时 |
-| `gpu-unlock-ui-<插件版本>-x86_64-1.txz` | 控制脚本和设置页面 | 插件更新时 |
+| `gpu-unlock-ui-<插件版本>-x86_64-1.txz` | 控制脚本和设置页面 | 不用编译：安装或更新插件时自动从 GitHub Releases 下载，并校验 MD5 |
 
 固件含有 NVIDIA 的二进制文件，本仓库不分发固件，模块包和固件包都由你在自己的服务器上编译。编译过程中，固件由 NVIDIA 官方文件生成，生成后只供你自己使用，不要再分发。
 
@@ -62,7 +62,7 @@ repo/build/unraid-container.sh /mnt/cache/build/gpu-unlock
 2. 下载内核源码并校验 sha256，打上 `/usr/src` 中的 Unraid 补丁，然后用 Unraid 的配置执行 `olddefconfig`。生成的 `.config` 必须与 Unraid 原配置一致，只允许编译器版本和 Rust 探测项不同。
 3. 下载上游 gpu-unlock（固定 commit），编译模块，生成固件，运行上游测试。
 4. 检查模块的 vermagic 与当前内核一致，并确认模块用到的每个符号都能在 `System.map` 中找到。
-5. 打出三个包。
+5. 打出模块包和固件包。
 
 第一次编译约需 10–20 分钟，主要取决于下载速度。容器最多使用 16 个 CPU 核心，并以较低优先级运行。
 
@@ -73,9 +73,13 @@ cd /mnt/cache/build/gpu-unlock
 ls out/
 mkdir -p /boot/config/plugins/gpu-unlock/packages
 cp out/*.txz /boot/config/plugins/gpu-unlock/packages/
-cp repo/gpu-unlock.plg /tmp/gpu-unlock.plg
-plugin install /tmp/gpu-unlock.plg
+plugin install https://raw.githubusercontent.com/EEEEgoose/unlockGPU4Unraid/main/gpu-unlock.plg
 ```
+
+也可以在网页的 **插件 → 安装插件** 中粘贴上面的 plg 地址。安装时，插件会从 GitHub Releases 下载 UI 包并保存到同一目录，之后开机不再需要联网。
+如果服务器访问不了 GitHub，可以先在 Unraid 的出站代理（Outgoing Proxy）设置中配置代理，或者在终端里加上 `https_proxy=…` 再执行 `plugin install`。
+
+之后插件的更新会出现在 **插件** 页面的“检查更新”中，可以直接在那里更新。插件更新不需要重新编译模块包和固件包。
 
 安装后默认不启用。打开 **设置 → 实用工具 → GPU Unlock**，勾选要解锁的显卡，“下次启动解锁”选“是”并保存，然后冷启动。
 
@@ -90,4 +94,4 @@ rm -rf /mnt/cache/build/gpu-unlock
 docker rmi archlinux:latest
 ```
 
-U 盘上 `config/plugins/gpu-unlock/packages/` 里的三个包要保留，每次开机都要从这里安装。
+U 盘上 `config/plugins/gpu-unlock/packages/` 里的包要保留，每次开机都要从这里安装。

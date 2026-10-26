@@ -1,16 +1,26 @@
 <?xml version='1.0' standalone='yes'?>
 <!DOCTYPE PLUGIN [
-  <!ENTITY name     "gpu-unlock">
-  <!ENTITY author   "gpu-unlock">
-  <!ENTITY version  "2026.10.25a">
-  <!ENTITY launch   "Settings/GPUUnlock">
-  <!ENTITY plugin   "/boot/config/plugins/&name;">
-  <!ENTITY packages "/boot/config/plugins/&name;/packages">
-  <!ENTITY emhttp   "/usr/local/emhttp/plugins/&name;">
+  <!ENTITY name       "gpu-unlock">
+  <!ENTITY author     "EEEEgoose">
+  <!ENTITY version    "2026.10.27">
+  <!ENTITY md5        "47d78b05a28af7ac9cf6045285430662">
+  <!ENTITY launch     "Settings/GPUUnlock">
+  <!ENTITY repo       "https://github.com/&author;/unlockGPU4Unraid">
+  <!ENTITY pluginURL  "https://raw.githubusercontent.com/&author;/unlockGPU4Unraid/main/&name;.plg">
+  <!ENTITY plugin     "/boot/config/plugins/&name;">
+  <!ENTITY packages   "/boot/config/plugins/&name;/packages">
+  <!ENTITY emhttp     "/usr/local/emhttp/plugins/&name;">
 ]>
-<PLUGIN name="&name;" author="&author;" version="&version;" launch="&launch;" icon="gpu-unlock.png" min="7.3.0">
+<PLUGIN name="&name;" author="&author;" version="&version;" launch="&launch;" pluginURL="&pluginURL;" support="&repo;/issues" icon="gpu-unlock.png" min="7.3.0">
 
 <CHANGES>
+###2026.10.27
+- 支持在 Unraid 中检查和安装插件更新：UI 包从 GitHub Releases 下载并校验 MD5，缓存在 U 盘上，之后离线启动也能使用。
+- 模块包和固件包仍需在本机用 Docker 编译，见仓库中的 docs/build-docker.md。
+- 启动规则写入 U 盘失败时，保存会如实报告失败，不再提示“已安排解锁”；settings.cfg 写入失败时也会提示。
+- 当前驱动一栏显示驱动版本号；底部按钮放在同一排并居中；页面底部注明基于 Zagitta/gpu-unlock 开发。
+- 图标改为透明背景。
+
 ###2026.10.25a
 - 新图标；不可解锁的显卡只显示原因。
 
@@ -19,24 +29,29 @@
 </CHANGES>
 
 <!--
-Every package comes from &packages; on the flash, so the boot never waits for the network.
-rc.local installs this plugin before nvidia-driver.plg; see docs/boot-integration.md.
+The UI package is downloaded once from the GitHub release and kept on the flash; the module and
+firmware packages are built locally (docs/build-docker.md). At boot every package comes from
+&packages;, so the boot never waits for the network. rc.local installs this plugin before
+nvidia-driver.plg; see docs/boot-integration.md.
 -->
 <FILE Run="/bin/bash">
 <INLINE>
-KERNEL=$(uname -r)
-KTAG=$(echo "$KERNEL" | tr - _)
 # Keep only this version's UI package on the flash.
 for old in &packages;/gpu-unlock-ui-*.txz; do
   case $old in *-ui-&version;-x86_64-*) ;; *) rm -f "$old" ;; esac
 done
-ui=$(ls &packages;/gpu-unlock-ui-&version;-x86_64-*.txz 2>/dev/null | tail -n 1)
-if [ -z "$ui" ]; then
-  echo "gpu-unlock: missing &packages;/gpu-unlock-ui-&version;-x86_64-*.txz"
-  exit 1
-fi
-upgradepkg --install-new --reinstall "$ui"
+</INLINE>
+</FILE>
 
+<FILE Name="&packages;/gpu-unlock-ui-&version;-x86_64-1.txz" Run="upgradepkg --install-new --reinstall">
+<URL>&repo;/releases/download/&version;/gpu-unlock-ui-&version;-x86_64-1.txz</URL>
+<MD5>&md5;</MD5>
+</FILE>
+
+<FILE Run="/bin/bash">
+<INLINE>
+KERNEL=$(uname -r)
+KTAG=$(echo "$KERNEL" | tr - _)
 kmod=$(ls &packages;/gpu-unlock-kmod-*_${KTAG}-x86_64-*.txz 2>/dev/null | tail -n 1)
 fw=$(ls &packages;/gpu-unlock-firmware-*-noarch-*.txz 2>/dev/null | tail -n 1)
 if [ -n "$kmod" ] &amp;&amp; [ -n "$fw" ]; then
@@ -44,7 +59,7 @@ if [ -n "$kmod" ] &amp;&amp; [ -n "$fw" ]; then
   upgradepkg --install-new --reinstall "$kmod"
   depmod -a "$KERNEL"
 else
-  echo "gpu-unlock: no module or firmware package for kernel $KERNEL; unlock skipped"
+  echo "gpu-unlock: no module or firmware package for kernel $KERNEL; unlock skipped (see &repo;/blob/main/docs/build-docker.md)"
 fi
 
 if [ ! -f &plugin;/settings.cfg ]; then

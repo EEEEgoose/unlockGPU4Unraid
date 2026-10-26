@@ -44,13 +44,14 @@ GeForce 版 FP16/BF16（FP32 累加）为 59.5 TFLOPS、TF32 为 29.8 TFLOPS，�
 本仓库不分发固件（见下文“固件与许可”），所以模块包和固件包需要你在自己的服务器上用 Docker 编译。
 完整步骤见 **[用 Docker 编译模块和固件](docs/build-docker.zh-CN.md)**，简要流程：
 
-1. 在 Unraid 终端下载本仓库，运行 `repo/build/unraid-container.sh <工作目录>`，得到三个 `.txz` 包。
-2. 把三个包复制到 U 盘的 `config/plugins/gpu-unlock/packages/`。
-3. `plugin install` 安装 `gpu-unlock.plg`。
+1. 在 Unraid 终端下载本仓库，运行 `repo/build/unraid-container.sh <工作目录>`，得到模块包和固件包。
+2. 把这两个包复制到 U 盘的 `config/plugins/gpu-unlock/packages/`。
+3. 从 `https://raw.githubusercontent.com/EEEEgoose/unlockGPU4Unraid/main/gpu-unlock.plg` 安装插件，可以用 `plugin install` 命令，也可以在 **插件 → 安装插件** 中粘贴地址。UI 包会自动从 GitHub Releases 下载。
 4. 打开 **设置 → 实用工具 → GPU Unlock**，勾选要解锁的显卡，“下次启动解锁”选“是”，保存。
 5. 冷启动（关机后再开机）。
 
 安装后默认不启用。保存只改变下次启动的配置，不会在线解锁。
+插件更新会出现在 **插件** 页面的“检查更新”中；模块包只在 Unraid 升级内核后才需要重新编译。
 
 ## 结果含义
 
@@ -91,3 +92,11 @@ bash tests/test-status.sh
 ```
 
 测试用替身命令模拟开机编排和日志解析，不涉及硬件。设计文档在 [docs/design/](docs/design/)。
+
+发布新版本：
+
+1. 修改 `gpu-unlock.plg` 中的 `version`，在 `<CHANGES>` 中写明改动。
+2. 运行 `build/package.sh`，把 `build/out/gpu-unlock-ui-<版本>-x86_64-1.txz` 的 MD5 填入 `gpu-unlock.plg` 中的 `md5`。
+3. 提交并推送 `main`，然后创建与版本号同名的 Release，上传这个 UI 包。
+
+plg 的 `pluginURL` 指向 `main` 分支，所以推送之后、Release 发布之前的这段时间里，“检查更新”会发现新版本，但 UI 包还下载不到。请先建好 Release，或者把这两步紧挨着完成。

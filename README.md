@@ -49,14 +49,17 @@ This repository does not distribute the firmware (see "Firmware and licensing" b
 firmware packages on your own server with Docker. The full steps are in
 **[Building the module and firmware with Docker](docs/build-docker.md)**. In short:
 
-1. In the Unraid terminal, download this repository and run `repo/build/unraid-container.sh <work dir>` to get three
-   `.txz` packages.
+1. In the Unraid terminal, download this repository and run `repo/build/unraid-container.sh <work dir>` to get the
+   module and firmware packages.
 2. Copy them to `config/plugins/gpu-unlock/packages/` on the flash drive.
-3. Install `gpu-unlock.plg` with `plugin install`.
+3. Install the plugin from `https://raw.githubusercontent.com/EEEEgoose/unlockGPU4Unraid/main/gpu-unlock.plg`, with `plugin install` or by pasting the URL into
+   **Plugins → Install Plugin**. The UI package is downloaded from GitHub Releases.
 4. Open **Settings → Utilities → GPU Unlock**, tick the cards to unlock, set "unlock at next boot" to yes and save.
 5. Power cycle the server.
 
 The plugin starts disabled. Saving only changes the next boot; nothing is unlocked while the server runs.
+Plugin updates appear under "Check for updates" on the **Plugins** page; the module package only needs a rebuild
+after Unraid ships a new kernel.
 The settings page is currently in Chinese only.
 
 ## What the results mean
@@ -104,3 +107,13 @@ bash tests/test-status.sh
 
 The tests replay the boot sequence and log parsing with stub commands; no hardware is involved. Design documents (in
 Chinese) are in [docs/design/](docs/design/).
+
+Releasing a new version:
+
+1. Change `version` in `gpu-unlock.plg` and describe the changes in `<CHANGES>`.
+2. Run `build/package.sh` and put the MD5 of `build/out/gpu-unlock-ui-<version>-x86_64-1.txz` into `md5` in
+   `gpu-unlock.plg`.
+3. Commit and push `main`, then create a release named after the version and attach that UI package.
+
+The plg's `pluginURL` points at `main`, so between the push and the release, "Check for updates" already offers the
+new version while its UI package cannot be downloaded yet. Create the release first, or do both steps back to back.
