@@ -19,7 +19,7 @@ foreach ($lines as $line) {
   $f = explode("\t", $line);
   if ($f[0] === 'gpu') {
     $cards[] = ['pci' => $f[1], 'id' => $f[2], 'unlocker' => $f[3] === 'no' ? '' : $f[3], 'driver' => $f[4],
-                'selected' => $f[5] === 'yes', 'model' => $f[6] ?? ''];
+                'selected' => $f[5] === 'yes', 'model' => $f[6] ?? '', 'uuid' => $f[7] ?? '', 'entry' => $f[8] ?? ''];
   } elseif ($f[0] === 'package') {
     $packages[$f[1]] = ['kmod' => $f[2] ?? '', 'firmware' => $f[3] ?? ''];
   } else {
@@ -41,6 +41,7 @@ $labels = [
   'skipped_bound' => '已被驱动占用而跳过',
   'skipped'       => '本次跳过',
   'failed'        => '解锁失败',
+  'wrong_card'    => '解锁的是另一张同型号显卡，已停用这项选择',
 ];
 $h = fn($s) => htmlspecialchars($s, ENT_QUOTES);
 ?>
@@ -55,7 +56,7 @@ $h = fn($s) => htmlspecialchars($s, ENT_QUOTES);
 <input type="hidden" name="csrf_token" value="<?=$var['csrf_token']?>">
 <input type="hidden" name="action" value="save">
 <table class="tablesorter">
-<thead><tr><th>解锁</th><th>PCI 地址</th><th>型号</th><th>PCI ID</th><th>支持</th><th>当前驱动</th><th>本次启动结果</th></tr></thead>
+<thead><tr><th>解锁</th><th>GPU UUID</th><th>PCI 地址</th><th>型号</th><th>PCI ID</th><th>支持</th><th>当前驱动</th><th>本次启动结果</th></tr></thead>
 <tbody>
 <?foreach ($cards as $c):
   $r = $results[$c['pci']] ?? null;
@@ -63,13 +64,14 @@ $h = fn($s) => htmlspecialchars($s, ENT_QUOTES);
   $support = $u ? "可解锁（{$u['name']}，{$u['arch']}）" : '不可解锁：不在支持列表';
 ?>
 <tr>
-<td><?if ($u):?><input type="checkbox" name="targets[]" value="<?=$h($c['pci'])?>"<?=$c['selected'] ? ' checked' : ''?>><?endif;?></td>
+<td><?if ($u && $c['entry']):?><input type="checkbox" name="targets[]" value="<?=$h($c['entry'])?>"<?=$c['selected'] ? ' checked' : ''?>><?endif;?></td>
+<td><?=$c['uuid'] ? $h($c['uuid']) : ($u ? 'NVIDIA 驱动未加载，读不到 UUID，暂不能选择' : '—')?></td>
 <td><?=$h($c['pci'])?></td>
 <td><?=$h($c['model'])?></td>
 <td><?=$h($c['id'])?></td>
 <td><?=$support?></td>
 <td><?=$c['driver'] === 'none' ? '未绑定' : $h($c['driver'])?></td>
-<td><?=$r ? $h($labels[$r['state']] ?? $r['state']).(isset($r['reason']) ? '：'.$h($r['reason']) : '') : '—'?></td>
+<td><?=$r ? $h($labels[$r['state']] ?? $r['state']).(isset($r['reason']) ? '：'.$h($r['reason']) : '').(isset($r['note']) ? '（'.$h($r['note']).'）' : '') : '—'?></td>
 </tr>
 <?endforeach;?>
 </tbody>
@@ -89,6 +91,7 @@ $h = fn($s) => htmlspecialchars($s, ENT_QUOTES);
 <dt>下次启动</dt><dd><?=($info['deferred'] ?? '') === 'yes' ? '已安排解锁' : '不解锁'?></dd>
 </dl>
 <p>保存只改变下次启动的配置，不会在线解锁。关闭插件或卸载后，已经生效的解锁状态要关机断电才会恢复。</p>
+<p>选择按 GPU UUID 记录。开机解锁时 NVIDIA 驱动尚未加载、读不到 UUID，插件先核对该地址上显卡的型号；驱动加载后再核对 UUID。任一项不符时，只发通知并停用这项选择，需要重新勾选。</p>
 <?if ($turing_present):?>
 <p class="orange-text">Turing 显卡由 turing-unlock 解锁。该项目较新，作者只在 Dell RTX 2080 Ti 22GB（驱动 575.51.03）上测试过；解锁后张量核心全速运行时功耗很高，作者提示可能损坏硬件。建议先只选一张卡，并设置功耗上限。</p>
 <?endif;?>

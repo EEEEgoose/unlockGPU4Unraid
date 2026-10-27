@@ -20,12 +20,12 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 $out = [];
 if ($action === 'save') {
-  // Only full PCI addresses of supported cards present now are kept.
+  // Only entries inspect offers now (UUID@address@IDs of a supported card) are kept.
   $supported = [];
   exec("$ctl inspect", $lines);
   foreach ($lines as $line) {
     $f = explode("\t", $line);
-    if ($f[0] === 'gpu' && $f[3] !== 'no') $supported[] = $f[1];
+    if ($f[0] === 'gpu' && $f[3] !== 'no' && ($f[8] ?? '') !== '') $supported[] = $f[8];
   }
   $targets = array_values(array_intersect($supported, (array)($_POST['targets'] ?? [])));
   $enabled = ($_POST['enabled'] ?? '') === 'yes' && $targets ? 'yes' : 'no';

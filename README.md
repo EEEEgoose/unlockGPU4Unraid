@@ -36,12 +36,12 @@ Dense 8192³ GEMM, FP16/BF16 with FP32 accumulation, median of 5 runs, using [be
 
 | Card | Precision | Unlocked | Mean SM clock | Locked peak at that clock | Gain |
 |---|---|---|---|---|---|
-| `cc:00.0` | FP16 | 95.74 TFLOPS | 1431 MHz | 49.8 TFLOPS | +92% |
-| `cc:00.0` | BF16 | 97.68 TFLOPS | 1445 MHz | 50.3 TFLOPS | +94% |
-| `cc:00.0` | TF32 | 46.00 TFLOPS | 1406 MHz | 24.5 TFLOPS | +88% |
-| `cd:00.0` | FP16 | 93.81 TFLOPS | 1410 MHz | 49.1 TFLOPS | +91% |
-| `cd:00.0` | BF16 | 96.68 TFLOPS | 1449 MHz | 50.4 TFLOPS | +92% |
-| `cd:00.0` | TF32 | 46.21 TFLOPS | 1390 MHz | 24.2 TFLOPS | +91% |
+| RTX 3080 #1 | FP16 | 95.74 TFLOPS | 1431 MHz | 49.8 TFLOPS | +92% |
+| RTX 3080 #1 | BF16 | 97.68 TFLOPS | 1445 MHz | 50.3 TFLOPS | +94% |
+| RTX 3080 #1 | TF32 | 46.00 TFLOPS | 1406 MHz | 24.5 TFLOPS | +88% |
+| RTX 3080 #2 | FP16 | 93.81 TFLOPS | 1410 MHz | 49.1 TFLOPS | +91% |
+| RTX 3080 #2 | BF16 | 96.68 TFLOPS | 1449 MHz | 50.4 TFLOPS | +92% |
+| RTX 3080 #2 | TF32 | 46.21 TFLOPS | 1390 MHz | 24.2 TFLOPS | +91% |
 
 Gain = unlocked ÷ locked peak at that clock − 1.
 
@@ -69,6 +69,16 @@ Plugin updates appear under "Check for updates" on the **Plugins** page; the mod
 after Unraid ships a new kernel.
 The settings page is currently in Chinese only.
 
+## Selecting cards
+
+Cards are selected by their GPU UUID. The UUID only exists once the NVIDIA driver has the card, while the unlock
+must run before that, so the plugin saves the UUID together with the card's address and PCI IDs. Before the unlock
+it checks that the address still holds that kind of card; after NVIDIA has loaded it checks the UUID. If either
+check fails, the plugin only sends a notification and disables that card's selection: select it again. Identical
+cards look the same before the driver loads, so if two of them swap slots, the first boot afterwards unlocks the one
+now at the saved address and then reports it. Selections saved by versions before 2026.10.27a carry no UUID and must
+be made again.
+
 ## What the results mean
 
 | State | Meaning |
@@ -79,6 +89,7 @@ The settings page is currently in Chinese only.
 | Skipped, bound to a driver | The card already had a driver when the unlock ran; it is not unbound or retried |
 | Skipped | No module package for this kernel, the module failed to load, or the address is not supported; the hardware was not touched |
 | Failed | The card reported a failure, shown with its reason; it is not retried |
+| Another card of the same model was unlocked | After NVIDIA loaded, the card at the saved address had a different UUID; the selection is disabled |
 
 A successful `modprobe gpu_unlock` does not mean the unlock succeeded. Each card's state comes only from the kernel log
 lines that this load added and that carry the card's PCI address.

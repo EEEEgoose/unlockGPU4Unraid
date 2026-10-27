@@ -37,6 +37,11 @@ IDS_turing_unlock="1e03 1e04 1e07 1e2d 1e2e
 1e81 1e82 1e84 1e87 1e89 1ec2 1ec7
 1f02 1f03 1f06 1f07 1f08 1f42 1f47"
 
+# A selected card is saved as UUID@ADDRESS@VENDOR:DEVICE@SUBVENDOR:SUBDEVICE, for example
+# GPU-377334bd-…@0000:c5:00.0@10de:2206@10de:146d. The UUID only exists once NVIDIA has
+# the card, so before the unlock the card at ADDRESS is checked against the IDs, and the
+# UUID is checked after NVIDIA has loaded. Identical cards differ only in their UUID.
+
 log() {
   echo "$(date '+%F %T') $*" >> "$LOG"
 }
@@ -57,6 +62,20 @@ cfg_write() {
   printf 'enabled="%s"\ntargets="%s"\n' "$1" "$2" > "$CFG.tmp" && mv "$CFG.tmp" "$CFG"
 }
 
+# The saved cards, one per line.
+entries() {
+  cfg_get targets | tr , '\n' | grep -v '^$'
+}
+
+entry_uuid() { printf '%s' "$1" | cut -d@ -f1; }
+entry_pci() { printf '%s' "$1" | cut -d@ -f2; }
+entry_ids() { printf '%s' "$1" | cut -d@ -f3-; }
+
+# A full entry; an address alone was saved by plugin versions before 2026.10.27a.
+entry_complete() {
+  [ "$(printf '%s' "$1" | tr -cd @ | wc -c | tr -d ' ')" = 3 ]
+}
+
 pci_attr() {
   local value
   value=$(cat "$SYSFS_PCI/$1/$2" 2>/dev/null) || return 1
@@ -65,6 +84,12 @@ pci_attr() {
 
 pci_driver() {
   [ -L "$SYSFS_PCI/$1/driver" ] && basename "$(readlink "$SYSFS_PCI/$1/driver")"
+}
+
+# VENDOR:DEVICE@SUBVENDOR:SUBDEVICE of the card at an address, as saved in an entry.
+pci_ids() {
+  printf '%s:%s@%s:%s' "$(pci_attr "$1" vendor)" "$(pci_attr "$1" device)" \
+    "$(pci_attr "$1" subsystem_vendor)" "$(pci_attr "$1" subsystem_device)"
 }
 
 # The unlock module for a full PCI address of a supported NVIDIA card in this machine.
@@ -82,6 +107,12 @@ unlocker_for() {
 
 supported() {
   unlocker_for "$1" > /dev/null
+}
+
+# "ADDRESS UUID" for every card NVIDIA drives, with addresses as in sysfs (0000:c5:00.0).
+gpu_uuids() {
+  nvidia-smi --query-gpu=pci.bus_id,uuid --format=csv,noheader 2> /dev/null |
+    awk -F ', *' 'NF == 2 { a = tolower($1); sub(/^0000/, "", a); print a, $2 }'
 }
 
 boot_id() {
@@ -162,6 +193,12 @@ load_nvidia() {
   done
 }
 
+notify() {
+  log "notify: $1: $2"
+  [ -x "$NOTIFY" ] && "$NOTIFY" -e "GPU Unlock" -s "$1" -i alert -d "$2" -l "/Settings/GPUUnlock"
+  return 0
+}
+
 block_nvidia() {
   local m
   mkdir -p "$ETC_MODPROBE"
@@ -172,14 +209,25 @@ block_nvidia() {
     done
   } > "$BLOCK_CONF"
   log "boot: NVIDIA loading blocked for this boot; power the server off before using the GPUs"
-  [ -x "$NOTIFY" ] && "$NOTIFY" -e "GPU Unlock" -s "Power off required" -i alert \
-    -d "An unlock module reported a fault that needs a power off. NVIDIA was not loaded this boot." -l "/Settings/GPUUnlock"
-  return 0
+  notify "Power off required" "An unlock module reported a fault that needs a power off. NVIDIA was not loaded this boot."
+}
+
+# Removes saved cards (entries in $1, one per line) from the selection, so the next
+# boot does not unlock them; with none left the unlock is disabled altogether.
+drop_entries() {
+  local keep
+  keep=$(entries | grep -vxF "$1" | paste -sd , -)
+  if [ -n "$keep" ]; then
+    cfg_write yes "$keep"
+  else
+    cfg_write no ""
+    rm -f "$DEFER_CONF"
+  fi
 }
 
 cmd_inspect() {
-  local dev bdf class id driver selected model targets m
-  targets=",$(cfg_get targets),"
+  local dev bdf class id driver selected model uuid uuids e m
+  uuids=$(gpu_uuids)
   for dev in "$SYSFS_PCI"/*; do
     bdf=$(basename "$dev")
     [ "$(pci_attr "$bdf" vendor)" = 10de ] || continue
@@ -188,11 +236,18 @@ cmd_inspect() {
     id=10de:$(pci_attr "$bdf" device)
     driver=$(pci_driver "$bdf")
     [ -n "$driver" ] && [ -r "$SYSFS_MODULE/$driver/version" ] && driver="$driver $(cat "$SYSFS_MODULE/$driver/version")"
-    case $targets in *",$bdf,"*) selected=yes ;; *) selected=no ;; esac
+    uuid=$(printf '%s\n' "$uuids" | awk -v a="$bdf" '$1 == a { print $2 }')
+    # Selected when a saved card has this UUID, or this address if NVIDIA does not drive it.
+    selected=no
+    for e in $(entries); do
+      if [ -n "$uuid" ] && [ "$(entry_uuid "$e")" = "$uuid" ]; then selected=yes; fi
+      if [ -z "$uuid" ] && [ "$(entry_pci "$e")" = "$bdf" ]; then selected=yes; fi
+    done
     # "cc:00.0 VGA compatible controller: NVIDIA Corporation GA102 [...]" -> after the class name
     model=$(lspci -s "$bdf" 2>/dev/null | sed 's/^[^ ]* [^:]*: //')
-    printf 'gpu\t%s\t%s\t%s\t%s\t%s\t%s\n' "$bdf" "$id" "$(unlocker_for "$bdf" || echo no)" \
-      "${driver:-none}" "$selected" "$model"
+    # gpu<TAB>address<TAB>PCI ID<TAB>module|no<TAB>driver<TAB>selected<TAB>model<TAB>UUID<TAB>entry to save
+    printf 'gpu\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$bdf" "$id" "$(unlocker_for "$bdf" || echo no)" \
+      "${driver:-none}" "$selected" "$model" "$uuid" "${uuid:+$uuid@$bdf@$(pci_ids "$bdf")}"
   done
   printf 'kernel\t%s\n' "$KERNEL"
   # package<TAB>module<TAB>kmod file<TAB>firmware file<TAB>installed module path
@@ -205,19 +260,24 @@ cmd_inspect() {
 }
 
 cmd_prepare_boot() {
-  local pci m
+  local e pci m
   if [ "$(cfg_get enabled)" != yes ]; then
     rm -f "$DEFER_CONF"
     echo "unlock disabled for the next boot"
     return 0
   fi
-  if [ -z "$(cfg_get targets)" ]; then
+  if [ -z "$(entries)" ]; then
     echo "no target selected" >&2
     return 1
   fi
-  for pci in $(cfg_get targets | tr , ' '); do
-    if ! m=$(unlocker_for "$pci"); then
-      echo "$pci is not a supported card" >&2
+  for e in $(entries); do
+    if ! entry_complete "$e"; then
+      echo "$e was saved by an older version; select the card again" >&2
+      return 1
+    fi
+    pci=$(entry_pci "$e")
+    if ! m=$(unlocker_for "$pci") || [ "$(pci_ids "$pci")" != "$(entry_ids "$e")" ]; then
+      echo "$(entry_uuid "$e") is not a supported card at $pci" >&2
       return 1
     fi
     if [ -z "$(kmod_package "$m")" ] || [ -z "$(firmware_package "$m")" ]; then
@@ -236,17 +296,17 @@ cmd_prepare_boot() {
     echo "cannot write $DEFER_CONF; unlock not scheduled" >&2
     return 1
   fi
-  log "prepare-boot: unlock of $(cfg_get targets) scheduled for the next boot"
-  echo "unlock of $(cfg_get targets) scheduled for the next boot"
+  log "prepare-boot: unlock of $(entries | cut -d@ -f1,2 | paste -sd ' ' -) scheduled for the next boot"
+  echo "unlock of $(entries | cut -d@ -f2 | paste -sd , -) scheduled for the next boot"
 }
 
 # Loads unlock module $1 once for the cards in $2 (comma separated) and appends
-# one entry per card to $entries, setting power_off=yes on a fault that needs it.
+# one line per card to $results, setting power_off=yes on a fault that needs it.
 run_unlocker() {
   local m=$1 list=$2 pci result before lines rc=0
   if ! modinfo -k "$KERNEL" "$m" > /dev/null 2>&1; then
     for pci in $(echo "$list" | tr , ' '); do
-      entries="$entries$pci${T}skipped${T}no $m package for kernel $KERNEL${T}no$T$m$NL"
+      results="$results$pci${T}skipped${T}no $m package for kernel $KERNEL${T}no$T$m$NL"
     done
     return 0
   fi
@@ -261,13 +321,13 @@ run_unlocker() {
        [ "$(printf '%s' "$result" | cut -f2)" = "no result in kernel log" ]; then
       result=$(printf 'skipped\t%s failed to load (%s)\tno' "$m" "$rc")
     fi
-    entries="$entries$pci$T$result$T$m$NL"
+    results="$results$pci$T$result$T$m$NL"
     [ "$(printf '%s' "$result" | cut -f3)" = yes ] && power_off=yes
   done
 }
 
 cmd_boot() {
-  local id pci m list candidates="" entries="" power_off=no
+  local id e pci m list uuid actual uuids saved candidates="" results="" checks="" dropped="" power_off=no
   mkdir -p "$RUN_DIR"
   id=$(boot_id)
   if status_is_current; then
@@ -279,12 +339,22 @@ cmd_boot() {
     [ -f "$ETC_MODPROBE/gpu-unlock.conf" ] && load_nvidia
     return 0
   fi
+  saved=$(entries)
 
-  for pci in $(cfg_get targets | tr , ' '); do
-    if ! supported "$pci"; then
-      entries="$entries$pci${T}skipped${T}not a supported card${T}no$NL"
+  # Before the unlock: only cards whose address still holds the saved kind of card.
+  # checks: entry<TAB>state (empty keeps the unlock result)<TAB>reason or note
+  for e in $saved; do
+    if ! entry_complete "$e"; then
+      checks="$checks$e${T}skipped${T}saved by an older version without the card's UUID; select the card again$NL"
+      dropped="$dropped$e$NL"
+      continue
+    fi
+    pci=$(entry_pci "$e")
+    if ! supported "$pci" || [ "$(pci_ids "$pci")" != "$(entry_ids "$e")" ]; then
+      checks="$checks$e${T}skipped${T}the card at $pci changed (saved $(entry_ids "$e"), found $(pci_ids "$pci")); select the card again$NL"
+      dropped="$dropped$e$NL"
     elif [ -n "$(pci_driver "$pci")" ]; then
-      entries="$entries$pci${T}skipped_bound${T}bound to $(pci_driver "$pci")${T}no$T$(unlocker_for "$pci")$NL"
+      checks="$checks$e${T}skipped_bound${T}bound to $(pci_driver "$pci")$NL"
     else
       candidates="$candidates $pci"
     fi
@@ -305,23 +375,63 @@ cmd_boot() {
     load_nvidia
   fi
 
+  # After NVIDIA: the unlocked card must be the selected one, which only its UUID tells.
+  uuids=""
+  [ $power_off = yes ] || uuids=$(gpu_uuids)
+  for e in $saved; do
+    entry_complete "$e" || continue
+    pci=$(entry_pci "$e")
+    uuid=$(entry_uuid "$e")
+    [ "$(printf '%s' "$results" | awk -F '\t' -v a="$pci" '$1 == a { print $2 }')" = unlocked ] || continue
+    actual=$(printf '%s\n' "$uuids" | awk -v a="$pci" '$1 == a { print $2 }')
+    if [ -z "$actual" ]; then
+      checks="$checks$e${T}${T}UUID not verified: NVIDIA does not report the card at $pci$NL"
+    elif [ "$actual" != "$uuid" ]; then
+      checks="$checks$e${T}wrong_card${T}the card at $pci is $actual, not the selected $uuid; select the card again$NL"
+      dropped="$dropped$e$NL"
+    fi
+  done
+
+  if [ -n "$dropped" ]; then
+    drop_entries "$(printf '%s' "$dropped")"
+    notify "Card selection disabled" "$(printf '%s' "$checks" | awk -F '\t' '$2 == "skipped" || $2 == "wrong_card" { print $3 }' | paste -sd ' ' -)"
+  fi
+
   {
     printf '{\n  "boot_id": %s,\n  "kernel": %s,\n  "power_off_required": %s,\n  "targets": [' \
       "$(json_str "$id")" "$(json_str "$KERNEL")" "$([ $power_off = yes ] && echo true || echo false)"
-    printf '%s' "$entries" | awk -F '\t' -v q='"' '
+    # R: unlock results by address; U: the saved UUID of each address; C: checks by
+    # saved entry, which override the unlock result.
+    {
+      printf '%s' "$results" | sed "s/^/R$T/"
+      for e in $saved; do
+        entry_complete "$e" && printf 'U%s%s%s%s\n' "$T" "$(entry_pci "$e")" "$T" "$(entry_uuid "$e")"
+      done
+      printf '%s' "$checks" | sed "s/^/C$T/"
+    } |
+      awk -F '\t' -v q='"' '
       function s(v) { gsub(/\\/, "\\\\", v); gsub(/"/, "\\\"", v); return q v q }
-      NF { printf "%s\n    {\"pci\": %s, \"state\": %s", (n++ ? "," : ""), s($1), s($2)
-           if ($5 != "") printf ", \"unlocker\": %s", s($5)
-           if ($3 != "") printf ", \"reason\": %s", s($3)
-           printf "}" }
-      END { if (n) printf "\n  " }'
+      function add(p) { if (!(p in seen)) { seen[p] = 1; order[++c] = p } }
+      $1 == "R" { add($2); state[$2] = $3; reason[$2] = $4; unl[$2] = $6; next }
+      $1 == "U" { uuid[$2] = $3; next }
+      $1 == "C" { n = split($2, f, "@"); p = (n == 4) ? f[2] : $2; add(p)
+                  if (n == 4) uuid[p] = f[1]
+                  if ($3 != "") { state[p] = $3; reason[p] = $4 } else note[p] = $4 }
+      END { for (i = 1; i <= c; i++) { p = order[i]
+              printf "%s\n    {\"pci\": %s, \"state\": %s", (i > 1 ? "," : ""), s(p), s(state[p])
+              if (uuid[p] != "") printf ", \"uuid\": %s", s(uuid[p])
+              if (unl[p] != "") printf ", \"unlocker\": %s", s(unl[p])
+              if (reason[p] != "") printf ", \"reason\": %s", s(reason[p])
+              if (note[p] != "") printf ", \"note\": %s", s(note[p])
+              printf "}" }
+            if (c) printf "\n  " }'
     printf ']\n}\n'
   } > "$STATUS.tmp" && mv "$STATUS.tmp" "$STATUS"
-  log "boot: $(printf '%s' "$entries" | awk -F '\t' 'NF { printf "%s%s=%s", (n++ ? " " : ""), $1, $2 }')"
+  log "boot: $(printf '%s' "$results" | awk -F '\t' 'NF { printf "%s%s=%s", (n++ ? " " : ""), $1, $2 }')"
 }
 
 cmd_status() {
-  local pci state first=1
+  local e state first=1
   if status_is_current; then
     cat "$STATUS"
     return 0
@@ -329,9 +439,13 @@ cmd_status() {
   [ "$(cfg_get enabled)" = yes ] && state=pending || state=disabled
   printf '{\n  "boot_id": %s,\n  "kernel": %s,\n  "power_off_required": false,\n  "targets": [' \
     "$(json_str "$(boot_id)")" "$(json_str "$KERNEL")"
-  for pci in $(cfg_get targets | tr , ' '); do
+  for e in $(entries); do
     [ $first = 1 ] || printf ','
-    printf '\n    {"pci": %s, "state": "%s"}' "$(json_str "$pci")" "$state"
+    if entry_complete "$e"; then
+      printf '\n    {"pci": %s, "state": "%s", "uuid": %s}' "$(json_str "$(entry_pci "$e")")" "$state" "$(json_str "$(entry_uuid "$e")")"
+    else
+      printf '\n    {"pci": %s, "state": "%s"}' "$(json_str "$e")" "$state"
+    fi
     first=0
   done
   [ $first = 1 ] || printf '\n  '

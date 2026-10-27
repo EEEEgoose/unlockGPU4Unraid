@@ -21,7 +21,7 @@
 
 ## 编排测试（Task 3）
 
-2026-10-27，macOS bash 3.2：`bash tests/test-boot.sh` 57 项、`bash tests/test-status.sh` 21 项全部通过（含 Turing 与双模块场景）。
+2026-10-27，macOS bash 3.2：`bash tests/test-boot.sh` 78 项、`bash tests/test-status.sh` 21 项全部通过（含 Turing、双模块，以及按 UUID 选卡的型号与 UUID 核对场景）。
 另做了变异检查：去掉阻断规则、去掉新增日志边界、去掉断电判据，测试分别报告 8、3、8 项失败。
 这些测试只验证脚本编排和结果解释，不能证明硬件解锁成功。
 
@@ -44,4 +44,5 @@
 | 内核升级后启动（2026-10-27，Unraid 7.3.4，`6.18.58-Unraid`，NVIDIA 615.78.08，boot `9f470a5c`） | 插件已关闭、没有屏蔽规则；插件照常安装，日志为 `no module or firmware package for kernel 6.18.58-Unraid; unlock skipped`；NVIDIA 正常加载四张卡 |
 | 从 GitHub 安装 `2026.10.27` | 经代理执行 `plugin install <pluginURL>`：下载 plg 与 Release 中的 UI 包，U 盘缓存的包 MD5 为 `47d78b05a28af7ac9cf6045285430662`，与 plg 一致；旧的 `2026.10.25a` UI 包被清除；`plugin check` 返回 `2026.10.27` |
 | `6.18.58-Unraid` 的模块包（2026-10-27，两个项目同一次容器编译） | 内核配置与 Unraid 一致（仅编译器版本与 Rust 探测项不同）。gpu-unlock `af28cbb`：上游测试 5 项通过，导入 61 个符号全部导出，vermagic `6.18.58-Unraid SMP preempt mod_unload`，固件 5 个。turing-unlock `417f333`（2.0.0）：上游无测试，导入 57 个符号全部导出，vermagic 相同，固件 6 个（含 `sec2_bl_tu102.bin`），两者共用同一份 NVIDIA 610.43.03 输入 |
+| PCI 地址变化（2026-10-27） | 升级到 Unraid 7.3.4 后重启，四张卡的地址对调：`c5`/`c8` 变为 RTX 3080（10de:2206，子系统 10de:146d），`cc`/`cd` 变为 RTX 2080 Ti（10de:1e07，子系统 10de:12fa）。当前 UUID：`c5` GPU-377334bd-f8ea-4c2b-ac56-8a5653fdb110、`c8` GPU-6147fd8d-fdcf-798a-5e41-9f09d0798190、`cc` GPU-6b9b2810-afad-5c38-52e9-0949330f9bd6、`cd` GPU-3b9ff912-a9d6-7655-9bf9-6e6fb289e5c6。四张卡均无 PCIe 设备序列号，同型号两张卡的 PCI ID、子系统 ID 和 VBIOS 版本相同。本表此前出现的 `cc`、`cd` 均指当时的两张 RTX 3080。由此改为按 UUID 选卡 |
 | Turing（两张 RTX 2080 Ti 22GB，`10de:1e07`）实机解锁 | 待验证；turing-unlock 作者仅在 Dell RTX 2080 Ti 22GB + 驱动 575.51.03 上测试，本机驱动为 615.78.08 |

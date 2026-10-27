@@ -73,7 +73,7 @@ if [ "$(id -u)" != 0 ]; then
 fi
 "$CONTROL" disable > /dev/null
 check "disable removes the deferral" no "$([ -f "$W/boot/modprobe.d/gpu-unlock.conf" ] && echo yes || echo no)"
-check "disable keeps the selection" 'enabled="no" targets="0000:cc:00.0,0000:cd:00.0"' "$(tr '\n' ' ' < "$GPU_UNLOCK_PLUGIN_DIR/settings.cfg" | sed 's/ $//')"
+check "disable keeps the selection" "enabled=\"no\" targets=\"$(entry 0000:cc:00.0),$(entry 0000:cd:00.0)\"" "$(tr '\n' ' ' < "$GPU_UNLOCK_PLUGIN_DIR/settings.cfg" | sed 's/ $//')"
 teardown
 
 for branch in module-present needs-install; do
@@ -157,6 +157,73 @@ nvidia_driver_stage
 check "no turing package: order" "unlock gpu_unlock targets=$TARGETS nvidia cdi" "$(events)"
 check "no turing package: reason" "no turing_unlock package for kernel 6.18.54-Unraid" "$(reason_of 0000:c5:00.0)"
 check "no turing package: ampere unlocked" unlocked "$(state_of 0000:cd:00.0)"
+teardown
+
+# The saved card's UUID is checked once NVIDIA reports it.
+setup
+configure yes $TARGETS
+early_boot module-present
+"$CONTROL" boot
+check "uuid: recorded" GPU-test-0000:cc:00.0 "$("$CONTROL" status | jq -r '.targets[] | select(.pci == "0000:cc:00.0") | .uuid')"
+check "uuid: selection kept" "$(entry 0000:cc:00.0),$(entry 0000:cd:00.0)" "$(saved_targets)"
+check "uuid: no notice" "" "$(grep -c notify "$W/events" | grep -v '^0$')"
+teardown
+
+# A card of another kind now sits at a saved address: not unlocked, notified, dropped.
+setup
+configure yes $TARGETS
+early_boot module-present
+add_gpu 0000:cc:00.0 1e07
+"$CONTROL" boot
+check "changed card: only the other card unlocked" "unlock gpu_unlock targets=0000:cd:00.0 nvidia notify" "$(events)"
+check "changed card: skipped" skipped "$(state_of 0000:cc:00.0)"
+check "changed card: reason" "the card at 0000:cc:00.0 changed (saved 10de:2206@10de:146d, found 10de:1e07@10de:12fa); select the card again" "$(reason_of 0000:cc:00.0)"
+check "changed card: dropped from the selection" "$(entry 0000:cd:00.0)" "$(saved_targets)"
+check "changed card: still enabled" yes "$(grep -q 'enabled="yes"' "$GPU_UNLOCK_PLUGIN_DIR/settings.cfg" && echo yes)"
+teardown
+
+# Identical cards swapped: the card unlocked at the address is not the selected one.
+setup
+packages
+configure yes 0000:cc:00.0
+"$CONTROL" prepare-boot > /dev/null
+early_boot module-present
+sed -i.bak 's/GPU-test-0000:cc:00.0$/GPU-test-moved/' "$W/uuids"
+"$CONTROL" boot
+check "swapped card: unlocked then reported" "unlock gpu_unlock targets=0000:cc:00.0 nvidia notify" "$(events)"
+check "swapped card: wrong card" wrong_card "$(state_of 0000:cc:00.0)"
+check "swapped card: reason" "the card at 0000:cc:00.0 is GPU-test-moved, not the selected GPU-test-0000:cc:00.0; select the card again" "$(reason_of 0000:cc:00.0)"
+check "swapped card: last card dropped disables" 'enabled="no" targets=""' "$(tr '\n' ' ' < "$GPU_UNLOCK_PLUGIN_DIR/settings.cfg" | sed 's/ $//')"
+check "swapped card: boot rule removed" no "$([ -f "$W/boot/modprobe.d/gpu-unlock.conf" ] && echo yes || echo no)"
+teardown
+
+# An address saved by an older version: not unlocked, dropped, the UUID cards still unlocked.
+setup
+configure yes legacy:0000:cc:00.0,0000:cd:00.0
+early_boot module-present
+"$CONTROL" boot
+check "legacy entry: only the full entry unlocked" "unlock gpu_unlock targets=0000:cd:00.0 nvidia notify" "$(events)"
+check "legacy entry: reason" "saved by an older version without the card's UUID; select the card again" "$(reason_of 0000:cc:00.0)"
+check "legacy entry: dropped" "$(entry 0000:cd:00.0)" "$(saved_targets)"
+teardown
+
+# No UUID from NVIDIA (its package not installed yet): noted, selection kept.
+setup
+configure yes $TARGETS
+early_boot needs-install
+"$CONTROL" boot
+check "unverified: unlocked" unlocked "$(state_of 0000:cc:00.0)"
+check "unverified: note" "UUID not verified: NVIDIA does not report the card at 0000:cc:00.0" "$("$CONTROL" status | jq -r '.targets[] | select(.pci == "0000:cc:00.0") | .note')"
+check "unverified: selection kept" "$(entry 0000:cc:00.0),$(entry 0000:cd:00.0)" "$(saved_targets)"
+teardown
+
+# The page marks a card selected by its UUID, wherever it is now.
+setup
+configure no 0000:cd:00.0
+mkdir -p "$W/sys/module/nvidia"
+sed -i.bak 's/GPU-test-0000:cd:00.0$/GPU-test-elsewhere/; s/GPU-test-0000:cc:00.0$/GPU-test-0000:cd:00.0/' "$W/uuids"
+check "inspect: selection follows the UUID" 0000:cc:00.0 "$("$CONTROL" inspect | awk -F '\t' '$1 == "gpu" && $6 == "yes" { print $2 }')"
+check "inspect: entry to save" "GPU-test-0000:cd:00.0@0000:cc:00.0@10de:2206@10de:146d" "$("$CONTROL" inspect | awk -F '\t' '$2 == "0000:cc:00.0" { print $9 }')"
 teardown
 
 # Missing kmod for this kernel: no unlock, normal NVIDIA path kept.

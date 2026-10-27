@@ -12,6 +12,7 @@ setup() {
   echo boot-1 > "$W/boot_id"
   : > "$W/events"
   : > "$W/kmsg"
+  : > "$W/uuids"
   export GPU_UNLOCK_PLUGIN_DIR=$W/boot/plugins/gpu-unlock
   export GPU_UNLOCK_BOOT_MODPROBE=$W/boot/modprobe.d
   export GPU_UNLOCK_ETC_MODPROBE=$W/etc/modprobe.d
@@ -91,6 +92,12 @@ EOF
 [ -d "$W/sys/module/nvidia" ] || modprobe nvidia || exit 1
 echo cdi >> "$W/events"
 EOF
+  # Reports UUIDs only once nvidia is loaded, from "BUS ID, UUID" lines in $W/uuids.
+  cat > "$W/bin/nvidia-smi" <<'EOF'
+#!/bin/bash
+[ -d "$W/sys/module/nvidia" ] || exit 9
+cat "$W/uuids"
+EOF
   cat > "$W/bin/notify" <<'EOF'
 #!/bin/bash
 echo notify >> "$W/events"
@@ -113,12 +120,19 @@ teardown() {
   rm -rf "$W"
 }
 
-# add_gpu BDF DEVICE [VENDOR [CLASS]]
+# add_gpu BDF DEVICE [VENDOR [CLASS]]: RTX 3080 (2206) and RTX 2080 Ti (1e07) get the
+# subsystem IDs of the validation server's cards, NVIDIA cards a UUID of GPU-test-BDF.
 add_gpu() {
   mkdir -p "$W/sys/pci/$1"
   echo "0x${3:-10de}" > "$W/sys/pci/$1/vendor"
   echo "0x$2" > "$W/sys/pci/$1/device"
   echo "0x${4:-030000}" > "$W/sys/pci/$1/class"
+  echo "0x${3:-10de}" > "$W/sys/pci/$1/subsystem_vendor"
+  case $2 in 2206) echo 0x146d ;; 1e07) echo 0x12fa ;; *) echo 0x0000 ;; esac > "$W/sys/pci/$1/subsystem_device"
+  grep -v "$(echo "$1" | sed 's/^0000://' | tr a-f A-F)\$" "$W/uuids" | grep -v ", GPU-test-$1\$" > "$W/uuids.tmp"
+  mv "$W/uuids.tmp" "$W/uuids"
+  [ "${3:-10de}" = 10de ] && [ "${4:-030000}" = 030000 ] && \
+    echo "0000$(echo "$1" | tr a-f A-F), GPU-test-$1" >> "$W/uuids"
   echo "pci:v0000$(echo "${3:-10de}" | tr a-f A-F)d0000$(echo "$2" | tr a-f A-F)sv00001458sd00004057bc03sc00i00" > "$W/sys/pci/$1/modalias"
 }
 
@@ -126,9 +140,30 @@ bind_gpu() {
   ln -s "$W/drivers/$2" "$W/sys/pci/$1/driver"
 }
 
+# The saved entry for the card now at an address: GPU-test-BDF@BDF@IDS, as the page saves it.
+entry() {
+  local d=$W/sys/pci/$1 v
+  v() { sed 's/^0x//' "$d/$1"; }
+  printf 'GPU-test-%s@%s@%s:%s@%s:%s' "$1" "$1" "$(v vendor)" "$(v device)" "$(v subsystem_vendor)" "$(v subsystem_device)"
+}
+
+# configure ENABLED TARGETS: addresses become full entries; "legacy:" keeps the rest as is.
 configure() {
+  local targets="" t
+  for t in $(echo "$2" | tr , ' '); do
+    case $t in
+      legacy:*) t=${t#legacy:} ;;
+      *@*) ;;
+      *) t=$(entry "$t") ;;
+    esac
+    targets="$targets${targets:+,}$t"
+  done
   mkdir -p "$GPU_UNLOCK_PLUGIN_DIR"
-  printf 'enabled="%s"\ntargets="%s"\n' "$1" "$2" > "$GPU_UNLOCK_PLUGIN_DIR/settings.cfg"
+  printf 'enabled="%s"\ntargets="%s"\n' "$1" "$targets" > "$GPU_UNLOCK_PLUGIN_DIR/settings.cfg"
+}
+
+saved_targets() {
+  sed -n 's/^targets="\(.*\)"$/\1/p' "$GPU_UNLOCK_PLUGIN_DIR/settings.cfg"
 }
 
 # rc.local continues with nvidia-driver.plg after gpu-unlock.plg, whatever it returned.

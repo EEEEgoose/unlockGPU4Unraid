@@ -3,7 +3,7 @@
   <!ENTITY name       "gpu-unlock">
   <!ENTITY author     "EEEEgoose">
   <!ENTITY version    "2026.10.27a">
-  <!ENTITY md5        "a904fe1685609cdc08be54a3fe250d1b">
+  <!ENTITY md5        "f192a5b0600dca5f9d28ac65a8f966b8">
   <!ENTITY launch     "Settings/GPUUnlock">
   <!ENTITY repo       "https://github.com/&author;/unlockGPU4Unraid">
   <!ENTITY pluginURL  "https://raw.githubusercontent.com/&author;/unlockGPU4Unraid/main/&name;.plg">
@@ -18,6 +18,7 @@
 - 新增 Turing 显卡（RTX 2080 Ti 等 TU102/TU104/TU106）解锁，基于 nlzy/turing-unlock。页面会按显卡型号自动选用 gpu-unlock 或 turing-unlock，开机时两者都在 NVIDIA 加载前完成。
 - turing-unlock 的模块包和固件包同样需要在本机用 Docker 编译；只编译其中一个也可以，没有包的显卡会跳过解锁。
 - turing-unlock 较新，作者只在 Dell RTX 2080 Ti 22GB 上测试过，解锁后功耗很高，请谨慎使用。
+- 显卡改按 GPU UUID 选择：开机解锁前核对该地址上的显卡型号，NVIDIA 加载后核对 UUID，不符时只发通知并停用这项选择。之前版本保存的选择需要重新勾选。
 
 ###2026.10.27
 - 支持在 Unraid 中检查和安装插件更新：UI 包从 GitHub Releases 下载并校验 MD5，缓存在 U 盘上，之后离线启动也能使用。
