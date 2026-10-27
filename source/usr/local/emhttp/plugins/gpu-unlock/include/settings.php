@@ -25,7 +25,7 @@ if ($action === 'save') {
   exec("$ctl inspect", $lines);
   foreach ($lines as $line) {
     $f = explode("\t", $line);
-    if ($f[0] === 'gpu' && $f[3] === 'yes') $supported[] = $f[1];
+    if ($f[0] === 'gpu' && $f[3] !== 'no') $supported[] = $f[1];
   }
   $targets = array_values(array_intersect($supported, (array)($_POST['targets'] ?? [])));
   $enabled = ($_POST['enabled'] ?? '') === 'yes' && $targets ? 'yes' : 'no';

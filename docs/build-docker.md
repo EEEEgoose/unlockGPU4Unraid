@@ -2,12 +2,14 @@
 
 English | [简体中文](build-docker.zh-CN.md)
 
-The plugin uses three packages in `config/plugins/gpu-unlock/packages/` on the flash drive. You build the module and firmware packages as described here; the UI package needs no build:
+The plugin's packages live in `config/plugins/gpu-unlock/packages/` on the flash drive. gpu-unlock (Ampere) and turing-unlock (Turing) each have a module package and a firmware package, built as described here; the UI package needs no build:
 
 | Package | Contents | Rebuild when |
 |---|---|---|
 | `gpu-unlock-kmod-…_<kernel>-x86_64-1.txz` | The `gpu_unlock.ko` kernel module | Unraid ships a new kernel |
 | `gpu-unlock-firmware-610.43.03-noarch-1.txz` | The five firmware files the unlock loads onto the card | Upstream gpu-unlock moves to another firmware version |
+| `turing-unlock-kmod-…_<kernel>-x86_64-1.txz` | The `turing_unlock.ko` kernel module | Unraid ships a new kernel |
+| `turing-unlock-firmware-610.43.03-noarch-1.txz` | The six firmware files of the Turing unlock | Upstream turing-unlock moves to another firmware version |
 | `gpu-unlock-ui-<plugin version>-x86_64-1.txz` | Control script and settings page | Never: installing or updating the plugin downloads it from GitHub Releases and checks its MD5 |
 
 The firmware contains NVIDIA binaries, so this repository does not distribute it: you build the module and firmware packages on your own server. The build generates the firmware from NVIDIA's own files, for your own use; do not redistribute it.
@@ -21,7 +23,7 @@ Everything runs in a throwaway Arch Linux container that is removed when the bui
 - Access to these hosts, or mirrors and a proxy (step 2):
   - `cdn.kernel.org`: kernel source
   - Arch Linux repositories: build tools
-  - `github.com`: upstream gpu-unlock source
+  - `github.com`: upstream gpu-unlock and turing-unlock source
   - `download.nvidia.com`, `archive.cachyos.org`: the NVIDIA files the firmware is generated from, checked against their SHA-256
 - Build on the system **running the target kernel**. The script reads Unraid's kernel config, patches and `System.map` from `/usr/src/linux-$(uname -r)`.
 
@@ -62,9 +64,11 @@ The script runs these steps in order and stops at the first failed check, so it 
 
 1. Installs the build tools: gcc, binutils, Python 3.14 and so on.
 2. Downloads the kernel source and checks its sha256, applies Unraid's patches from `/usr/src`, and runs `olddefconfig` with Unraid's config. The resulting `.config` must match Unraid's except for the compiler version and the Rust probes.
-3. Downloads upstream gpu-unlock at a pinned commit, builds the module, generates the firmware and runs the upstream tests.
+3. Downloads upstream gpu-unlock and then turing-unlock, each at a pinned commit, builds the module, generates the firmware and runs the upstream tests (turing-unlock has none, so that step is skipped). Both use the same NVIDIA files, downloaded once.
 4. Checks that the module's vermagic matches the running kernel and that every symbol it imports is in `System.map`.
-5. Writes the module and firmware packages.
+5. Writes the module and firmware packages of both projects, four in all.
+
+To build only one, prefix the command with `PROJECTS=gpu-unlock` or `PROJECTS=turing-unlock`.
 
 The first build takes about 10–20 minutes, mostly downloads. The container uses at most 16 CPU cores at low priority.
 

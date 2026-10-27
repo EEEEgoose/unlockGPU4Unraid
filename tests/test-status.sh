@@ -58,4 +58,14 @@ STUB_UNLOCK_FIXTURE=$W/odd.txt "$CONTROL" boot
 check "quotes: valid json" failed "$(state_of 0000:cc:00.0)"
 teardown
 
+# Turing: same per-card rule with the turing_unlock prefix.
+setup
+configure yes 0000:c5:00.0,0000:c8:00.0
+early_boot module-present
+STUB_TURING_FIXTURE=$FIXTURES/kmsg-turing-mixed.txt "$CONTROL" boot
+check "turing mixed: c5 unlocked" unlocked "$(state_of 0000:c5:00.0)"
+check "turing mixed: c8 reason" "unlock failed (-16)" "$(reason_of 0000:c8:00.0)"
+check "turing mixed: no power off" false "$("$CONTROL" status | jq .power_off_required)"
+teardown
+
 finish

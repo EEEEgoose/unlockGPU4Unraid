@@ -23,9 +23,11 @@ setup() {
   export GPU_UNLOCK_KERNEL=6.18.54-Unraid
   export GPU_UNLOCK_NOTIFY=$W/bin/notify
   export W
-  # gpu_unlock module installed for this kernel unless a test removes it.
+  # Both unlock modules installed for this kernel unless a test removes one.
   export STUB_HAVE_GPU_UNLOCK=yes
+  export STUB_HAVE_TURING_UNLOCK=yes
   export STUB_UNLOCK_FIXTURE=$FIXTURES/kmsg-ok.txt
+  export STUB_TURING_FIXTURE=$FIXTURES/kmsg-turing-ok.txt
   export STUB_UNLOCK_RC=0
   # Modules "modprobe -R <modalias>" resolves for an NVIDIA display device.
   export STUB_ALIAS_MODULES=nvidia
@@ -40,6 +42,7 @@ EOF
 [ "$1" = -n ] && shift
 case $1 in
   gpu_unlock) [ "$STUB_HAVE_GPU_UNLOCK" = yes ] && echo /lib/modules/extra/gpu_unlock.ko ;;
+  turing_unlock) [ "$STUB_HAVE_TURING_UNLOCK" = yes ] && echo /lib/modules/extra/turing_unlock.ko ;;
   nvidia) [ -f "$W/nvidia-installed" ] && echo /lib/modules/extra/nvidia.ko ;;
   *) false ;;
 esac
@@ -63,10 +66,15 @@ case $mod in
     echo "$mod" >> "$W/events"
     ;;
   gpu_unlock)
-    echo "unlock $*" >> "$W/events"
+    echo "unlock $mod $*" >> "$W/events"
     [ "$STUB_UNLOCK_RC" = 0 ] || exit "$STUB_UNLOCK_RC"
     cat "$STUB_UNLOCK_FIXTURE" >> "$W/kmsg"
     mkdir -p "$W/sys/module/gpu_unlock"
+    ;;
+  turing_unlock)
+    echo "unlock $mod $*" >> "$W/events"
+    cat "$STUB_TURING_FIXTURE" >> "$W/kmsg"
+    mkdir -p "$W/sys/module/turing_unlock"
     ;;
   nvidia)
     [ -f "$W/nvidia-installed" ] || exit 1
@@ -147,6 +155,10 @@ events() {
 
 state_of() {
   "$CONTROL" status | jq -r --arg p "$1" '.targets[] | select(.pci == $p) | .state'
+}
+
+unlocker_of() {
+  "$CONTROL" status | jq -r --arg p "$1" '.targets[] | select(.pci == $p) | .unlocker // ""'
 }
 
 reason_of() {

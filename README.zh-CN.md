@@ -2,10 +2,10 @@
 
 [English](README.md) | 简体中文
 
-在 NVIDIA 驱动接管之前，对选定的 Ampere 显卡运行 [Zagitta/gpu-unlock](https://github.com/Zagitta/gpu-unlock)，
-解锁 FP16/BF16 指令发射速率。NVIDIA 驱动、容器工具包和 CDI 仍由 NVIDIA Driver 插件负责。
+在 NVIDIA 驱动接管之前，解锁选定显卡的 FP16/BF16 张量核心全速：Ampere 显卡使用 [Zagitta/gpu-unlock](https://github.com/Zagitta/gpu-unlock)，
+Turing 显卡使用 [nlzy/turing-unlock](https://github.com/nlzy/turing-unlock)，插件按显卡型号自动选用。NVIDIA 驱动、容器工具包和 CDI 仍由 NVIDIA Driver 插件负责。
 
-本插件基于 [Zagitta/gpu-unlock](https://github.com/Zagitta/gpu-unlock) 开发，解锁算法与固件生成都来自上游，本插件只负责在 Unraid 上编排开机顺序、记录结果和提供设置页。
+本插件基于 [Zagitta/gpu-unlock](https://github.com/Zagitta/gpu-unlock) 和 [nlzy/turing-unlock](https://github.com/nlzy/turing-unlock) 开发，解锁算法与固件生成都来自上游，本插件只负责在 Unraid 上编排开机顺序、记录结果和提供设置页。
 
 ## 支持范围
 
@@ -14,9 +14,12 @@
 - Unraid 7.3.3，内核 `6.18.54-Unraid`，x86_64，NVIDIA 驱动 615.71.09
 - 两张 RTX 3080 20 GB（`10de:2206`，改装显存），开机解锁成功，NVIDIA 正常接管全部四张卡（另有两张 RTX 2080 Ti 不参与解锁）
 
-插件可选的显卡范围与上游一致：GA102/GA103/GA104/GA106 的 GeForce 型号。“上游支持该 PCI ID”不等于“该板卡已实测”。
-其他 NVIDIA 显卡（例如 RTX 2080 Ti）会显示为“不可解锁”，不能勾选。
-插件只使用与当前 `uname -r` 完全一致的模块包；找不到时，本次启动跳过解锁，NVIDIA 照常加载。
+插件可选的显卡范围与上游一致：gpu-unlock 支持 GA102/GA103/GA104/GA106 的 GeForce 型号，turing-unlock 支持 TU102/TU104/TU106。
+“上游支持该 PCI ID”不等于“该板卡已实测”。其他 NVIDIA 显卡会显示为“不可解锁”，不能勾选。
+插件只使用与当前 `uname -r` 完全一致的模块包；某个模块没有对应的包时，用它的显卡本次启动跳过解锁，NVIDIA 照常加载。
+
+**Turing 支持是新加入的。** turing-unlock 于 2026 年 10 月发布，作者只在 Dell RTX 2080 Ti 22GB、驱动 575.51.03 上测试过，
+本插件的验证服务器上还没有实测。作者提示张量核心全速运行时功耗很高，可能损坏硬件：建议先只选一张卡，并设置功耗上限。
 
 ## 实测性能
 
@@ -44,8 +47,8 @@ GeForce 版 FP16/BF16（FP32 累加）为 59.5 TFLOPS、TF32 为 29.8 TFLOPS，�
 本仓库不分发固件（见下文“固件与许可”），所以模块包和固件包需要你在自己的服务器上用 Docker 编译。
 完整步骤见 **[用 Docker 编译模块和固件](docs/build-docker.zh-CN.md)**，简要流程：
 
-1. 在 Unraid 终端下载本仓库，运行 `repo/build/unraid-container.sh <工作目录>`，得到模块包和固件包。
-2. 把这两个包复制到 U 盘的 `config/plugins/gpu-unlock/packages/`。
+1. 在 Unraid 终端下载本仓库，运行 `repo/build/unraid-container.sh <工作目录>`，得到 gpu-unlock 和 turing-unlock 的模块包与固件包。
+2. 把这些包复制到 U 盘的 `config/plugins/gpu-unlock/packages/`。
 3. 从 `https://raw.githubusercontent.com/EEEEgoose/unlockGPU4Unraid/main/gpu-unlock.plg` 安装插件，可以用 `plugin install` 命令，也可以在 **插件 → 安装插件** 中粘贴地址。UI 包会自动从 GitHub Releases 下载。
 4. 打开 **设置 → 实用工具 → GPU Unlock**，勾选要解锁的显卡，“下次启动解锁”选“是”，保存。
 5. 冷启动（关机后再开机）。
@@ -80,8 +83,8 @@ GeForce 版 FP16/BF16（FP32 累加）为 59.5 TFLOPS、TF32 为 29.8 TFLOPS，�
 ## 固件与许可
 
 - 本仓库的代码（插件、构建脚本、测试）以 [GPL-2.0](LICENSE) 发布，与上游一致。
-- 模块由上游 `GPL-2.0-only` 源码编译，固定在 commit `af28cbbfd3d922a659227ecfb7369adfd924cf03`；构建脚本和使用的 Unraid 内核补丁来源都在本仓库中。
-- 固件含有 NVIDIA 的二进制文件，受 NVIDIA 驱动许可协议约束，上游也未取得再分发许可（见上游 `firmware/NOTICE.md`）。
+- 模块由上游 `GPL-2.0-only` 源码编译：gpu-unlock 固定在 commit `af28cbbfd3d922a659227ecfb7369adfd924cf03`，turing-unlock 固定在 commit `417f333263ff169e8f449c931b70db9dfd7b8ef4`；构建脚本和使用的 Unraid 内核补丁来源都在本仓库中。
+- 固件含有 NVIDIA 的二进制文件，受 NVIDIA 驱动许可协议约束，两个上游都未取得再分发许可（见各自的 `firmware/NOTICE.md`）。
   因此本仓库**不包含也不分发固件**；编译时从 NVIDIA 官方文件在你的服务器上生成，仅供自用，请勿再分发。
 
 ## 开发

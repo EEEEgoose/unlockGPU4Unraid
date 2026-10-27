@@ -1,0 +1,4 @@
+[   42.301005] turing_unlock: failure kernel/turing_unlock/unlock.c:861 turing_unlock_card error=-5
+[   42.301011] pci 0000:c5:00.0: turing_unlock: firmware did not stop; retaining DMA resources until power off
+[   42.301020] pci 0000:c5:00.0: turing_unlock: unlock failed (-5)
+[   43.402771] pci 0000:c8:00.0: turing_unlock: unlocked

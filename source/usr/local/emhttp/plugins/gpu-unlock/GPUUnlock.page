@@ -6,18 +6,27 @@ Icon="gpu-unlock.png"
 $ctl = '/usr/local/sbin/gpu-unlock-control';
 $action = '/plugins/gpu-unlock/include/settings.php';
 
+// Unlock module => upstream project and the GPUs it covers.
+$unlockers = [
+  'gpu_unlock'    => ['name' => 'gpu-unlock',    'arch' => 'Ampere', 'url' => 'https://github.com/Zagitta/gpu-unlock'],
+  'turing_unlock' => ['name' => 'turing-unlock', 'arch' => 'Turing', 'url' => 'https://github.com/nlzy/turing-unlock'],
+];
 $cards = [];
+$packages = [];
 $info = [];
 exec("$ctl inspect", $lines);
 foreach ($lines as $line) {
   $f = explode("\t", $line);
   if ($f[0] === 'gpu') {
-    $cards[] = ['pci' => $f[1], 'id' => $f[2], 'supported' => $f[3] === 'yes', 'driver' => $f[4],
+    $cards[] = ['pci' => $f[1], 'id' => $f[2], 'unlocker' => $f[3] === 'no' ? '' : $f[3], 'driver' => $f[4],
                 'selected' => $f[5] === 'yes', 'model' => $f[6] ?? ''];
+  } elseif ($f[0] === 'package') {
+    $packages[$f[1]] = ['kmod' => $f[2] ?? '', 'firmware' => $f[3] ?? ''];
   } else {
     $info[$f[0]] = $f[1] ?? '';
   }
 }
+$turing_present = in_array('turing_unlock', array_column($cards, 'unlocker'), true);
 $status = json_decode(shell_exec("$ctl status") ?: '', true) ?: [];
 $results = [];
 foreach ($status['targets'] ?? [] as $t) $results[$t['pci']] = $t;
@@ -36,7 +45,7 @@ $labels = [
 $h = fn($s) => htmlspecialchars($s, ENT_QUOTES);
 ?>
 <?if (!empty($status['power_off_required'])):?>
-<p class="red-text"><b>gpu_unlock 报告了需要关机断电的故障。本次启动已阻止加载 NVIDIA 驱动和生成 CDI；请先关机断电，再开机。</b></p>
+<p class="red-text"><b>解锁模块报告了需要关机断电的故障。本次启动已阻止加载 NVIDIA 驱动和生成 CDI；请先关机断电，再开机。</b></p>
 <?endif;?>
 <?if (isset($_GET['msg'])):?>
 <p><?=$h($_GET['msg'])?></p>
@@ -50,10 +59,11 @@ $h = fn($s) => htmlspecialchars($s, ENT_QUOTES);
 <tbody>
 <?foreach ($cards as $c):
   $r = $results[$c['pci']] ?? null;
-  $support = $c['supported'] ? '可解锁' : '不可解锁：不在 gpu_unlock 支持列表';
+  $u = $unlockers[$c['unlocker']] ?? null;
+  $support = $u ? "可解锁（{$u['name']}，{$u['arch']}）" : '不可解锁：不在支持列表';
 ?>
 <tr>
-<td><?if ($c['supported']):?><input type="checkbox" name="targets[]" value="<?=$h($c['pci'])?>"<?=$c['selected'] ? ' checked' : ''?>><?endif;?></td>
+<td><?if ($u):?><input type="checkbox" name="targets[]" value="<?=$h($c['pci'])?>"<?=$c['selected'] ? ' checked' : ''?>><?endif;?></td>
 <td><?=$h($c['pci'])?></td>
 <td><?=$h($c['model'])?></td>
 <td><?=$h($c['id'])?></td>
@@ -72,11 +82,16 @@ $h = fn($s) => htmlspecialchars($s, ENT_QUOTES);
 <option value="yes"<?=$enabled ? ' selected' : ''?>>是</option>
 </select></dd>
 <dt>内核</dt><dd><?=$h($info['kernel'] ?? '')?></dd>
-<dt>模块包</dt><dd><?=$h(($info['kmod_package'] ?? '') ?: '缺少当前内核的包，本次启动会跳过解锁')?></dd>
-<dt>固件包</dt><dd><?=$h(($info['firmware_package'] ?? '') ?: '缺少')?></dd>
+<?foreach ($unlockers as $m => $u): $p = $packages[$m] ?? ['kmod' => '', 'firmware' => ''];?>
+<dt><?=$u['name']?> 模块包</dt><dd><?=$h($p['kmod'] ?: '缺少当前内核的包，对应的显卡本次启动会跳过解锁')?></dd>
+<dt><?=$u['name']?> 固件包</dt><dd><?=$h($p['firmware'] ?: '缺少')?></dd>
+<?endforeach;?>
 <dt>下次启动</dt><dd><?=($info['deferred'] ?? '') === 'yes' ? '已安排解锁' : '不解锁'?></dd>
 </dl>
 <p>保存只改变下次启动的配置，不会在线解锁。关闭插件或卸载后，已经生效的解锁状态要关机断电才会恢复。</p>
+<?if ($turing_present):?>
+<p class="orange-text">Turing 显卡由 turing-unlock 解锁。该项目较新，作者只在 Dell RTX 2080 Ti 22GB（驱动 575.51.03）上测试过；解锁后张量核心全速运行时功耗很高，作者提示可能损坏硬件。建议先只选一张卡，并设置功耗上限。</p>
+<?endif;?>
 </form>
 
 <form id="gpu-unlock-disable" method="POST" action="<?=$action?>">
@@ -90,4 +105,4 @@ $h = fn($s) => htmlspecialchars($s, ENT_QUOTES);
 <input type="button" value="下载日志" onclick="location.href='<?=$action?>?action=log'">
 <input type="submit" form="gpu-unlock-disable" value="关闭解锁">
 </div>
-<p style="text-align:center">本插件基于 <a href="https://github.com/Zagitta/gpu-unlock" target="_blank" rel="noopener noreferrer">Zagitta/gpu-unlock</a> 开发</p>
+<p style="text-align:center">本插件基于 <a href="https://github.com/Zagitta/gpu-unlock" target="_blank" rel="noopener noreferrer">Zagitta/gpu-unlock</a> 和 <a href="https://github.com/nlzy/turing-unlock" target="_blank" rel="noopener noreferrer">nlzy/turing-unlock</a> 开发</p>

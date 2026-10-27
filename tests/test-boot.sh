@@ -4,11 +4,18 @@
 . "$(dirname "$0")/harness.sh"
 
 TARGETS=0000:cc:00.0,0000:cd:00.0
+TURING=0000:c5:00.0,0000:c8:00.0
 
 packages() {
   mkdir -p "$GPU_UNLOCK_PLUGIN_DIR/packages"
   touch "$GPU_UNLOCK_PLUGIN_DIR/packages/gpu-unlock-kmod-1.0.0_6.18.54_Unraid-x86_64-1.txz" \
         "$GPU_UNLOCK_PLUGIN_DIR/packages/gpu-unlock-firmware-610.43.03-noarch-1.txz"
+}
+
+turing_packages() {
+  mkdir -p "$GPU_UNLOCK_PLUGIN_DIR/packages"
+  touch "$GPU_UNLOCK_PLUGIN_DIR/packages/turing-unlock-kmod-2.0.0_6.18.54_Unraid-x86_64-1.txz" \
+        "$GPU_UNLOCK_PLUGIN_DIR/packages/turing-unlock-firmware-610.43.03-noarch-1.txz"
 }
 
 # inspect: every NVIDIA GPU is listed, only supported cards are unlockable, none preselected.
@@ -17,7 +24,7 @@ add_gpu 0000:d5:00.0 2000 1a03
 add_gpu 0000:cc:00.1 1aef 10de 040300
 check "inspect: NVIDIA GPUs only" "0000:c5:00.0 0000:c8:00.0 0000:cc:00.0 0000:cd:00.0" \
   "$("$CONTROL" inspect | awk -F '\t' '$1 == "gpu" { print $2 }' | sort | tr '\n' ' ' | sed 's/ $//')"
-check "inspect: unlockable" "0000:c5:00.0=no 0000:c8:00.0=no 0000:cc:00.0=yes 0000:cd:00.0=yes" \
+check "inspect: unlock module per card" "0000:c5:00.0=turing_unlock 0000:c8:00.0=turing_unlock 0000:cc:00.0=gpu_unlock 0000:cd:00.0=gpu_unlock" \
   "$("$CONTROL" inspect | awk -F '\t' '$1 == "gpu" { print $2 "=" $4 }' | sort | tr '\n' ' ' | sed 's/ $//')"
 check "inspect: model without address and class" "NVIDIA Corporation GA102 [GeForce RTX 3080] (rev a1)" \
   "$("$CONTROL" inspect | awk -F '\t' '$2 == "0000:cc:00.0" { print $7 }')"
@@ -38,7 +45,15 @@ check "prepare-boot without packages refuses" no "$([ -f "$W/boot/modprobe.d/gpu
 packages
 configure yes 0000:c5:00.0
 "$CONTROL" prepare-boot > /dev/null 2>&1
-check "prepare-boot refuses a 2080 Ti" no "$([ -f "$W/boot/modprobe.d/gpu-unlock.conf" ] && echo yes || echo no)"
+check "prepare-boot refuses a 2080 Ti without turing packages" no "$([ -f "$W/boot/modprobe.d/gpu-unlock.conf" ] && echo yes || echo no)"
+turing_packages
+"$CONTROL" prepare-boot > /dev/null 2>&1
+check "prepare-boot accepts a 2080 Ti with turing packages" yes "$([ -f "$W/boot/modprobe.d/gpu-unlock.conf" ] && echo yes || echo no)"
+rm -f "$W/boot/modprobe.d/gpu-unlock.conf"
+add_gpu 0000:d5:00.0 2000 1a03
+configure yes 0000:d5:00.0
+"$CONTROL" prepare-boot > /dev/null 2>&1
+check "prepare-boot refuses a card no module supports" no "$([ -f "$W/boot/modprobe.d/gpu-unlock.conf" ] && echo yes || echo no)"
 configure yes $TARGETS
 "$CONTROL" prepare-boot > /dev/null
 check "prepare-boot defers every nvidia module" \
@@ -70,7 +85,7 @@ for branch in module-present needs-install; do
   early_boot $branch
   "$CONTROL" boot
   nvidia_driver_stage
-  check "$branch: order" "unlock targets=$TARGETS nvidia cdi" "$(events)"
+  check "$branch: order" "unlock gpu_unlock targets=$TARGETS nvidia cdi" "$(events)"
   check "$branch: both unlocked" "unlocked unlocked" "$(state_of 0000:cc:00.0) $(state_of 0000:cd:00.0)"
   teardown
 
@@ -84,7 +99,7 @@ for branch in module-present needs-install; do
     STUB_UNLOCK_FIXTURE=$FIXTURES/$fixture "$CONTROL" boot
     check "$branch/$fixture: boot exit status" 0 "$?"
     nvidia_driver_stage > /dev/null 2>&1
-    check "$branch/$fixture: no nvidia, no cdi" "unlock targets=$TARGETS notify" "$(events)"
+    check "$branch/$fixture: no nvidia, no cdi" "unlock gpu_unlock targets=$TARGETS notify" "$(events)"
     check "$branch/$fixture: block rule present" yes "$(grep -qs '^install nvidia /bin/false' "$W/etc/modprobe.d/gpu-unlock-block.conf" && echo yes || echo no)"
     teardown
   done
@@ -96,7 +111,7 @@ configure yes $TARGETS
 early_boot module-present
 STUB_ALIAS_MODULES="nouveau nvidiafb nvidia nvidia_drm" "$CONTROL" boot
 nvidia_driver_stage
-check "alias modules: order" "unlock targets=$TARGETS nvidia nvidia_drm cdi" "$(events)"
+check "alias modules: order" "unlock gpu_unlock targets=$TARGETS nvidia nvidia_drm cdi" "$(events)"
 teardown
 
 # The power-off block also refuses nvidia_drm, which would pull nvidia in as a dependency.
@@ -106,7 +121,42 @@ early_boot module-present
 STUB_ALIAS_MODULES="nvidia nvidia_drm" STUB_UNLOCK_FIXTURE=$FIXTURES/kmsg-poweroff.txt "$CONTROL" boot
 modprobe nvidia_drm 2> /dev/null
 nvidia_driver_stage > /dev/null 2>&1
-check "power off: nvidia_drm refused too" "unlock targets=$TARGETS notify" "$(events)"
+check "power off: nvidia_drm refused too" "unlock gpu_unlock targets=$TARGETS notify" "$(events)"
+teardown
+
+# Ampere and Turing cards together: one load per module, both before NVIDIA.
+setup
+configure yes $TARGETS,$TURING
+early_boot module-present
+"$CONTROL" boot
+nvidia_driver_stage
+check "both modules: order" "unlock gpu_unlock targets=$TARGETS unlock turing_unlock targets=$TURING nvidia cdi" "$(events)"
+check "both modules: all unlocked" "unlocked unlocked unlocked unlocked" \
+  "$(state_of 0000:cc:00.0) $(state_of 0000:cd:00.0) $(state_of 0000:c5:00.0) $(state_of 0000:c8:00.0)"
+check "both modules: unlocker recorded" "gpu_unlock turing_unlock" "$(unlocker_of 0000:cc:00.0) $(unlocker_of 0000:c8:00.0)"
+teardown
+
+# A Turing fault that needs a power off blocks NVIDIA for every card.
+setup
+configure yes $TARGETS,$TURING
+early_boot module-present
+STUB_TURING_FIXTURE=$FIXTURES/kmsg-turing-poweroff.txt "$CONTROL" boot
+nvidia_driver_stage > /dev/null 2>&1
+check "turing power off: no nvidia, no cdi" "unlock gpu_unlock targets=$TARGETS unlock turing_unlock targets=$TURING notify" "$(events)"
+check "turing power off: c5 failed" failed "$(state_of 0000:c5:00.0)"
+check "turing power off: reason" "turing_unlock: firmware did not stop; retaining DMA resources until power off" "$(reason_of 0000:c5:00.0)"
+check "turing power off: ampere cards still unlocked" "unlocked unlocked" "$(state_of 0000:cc:00.0) $(state_of 0000:cd:00.0)"
+teardown
+
+# Only the Ampere module installed: Turing cards skipped, Ampere unlocked, NVIDIA loads.
+setup
+configure yes $TARGETS,$TURING
+early_boot module-present
+STUB_HAVE_TURING_UNLOCK=no "$CONTROL" boot
+nvidia_driver_stage
+check "no turing package: order" "unlock gpu_unlock targets=$TARGETS nvidia cdi" "$(events)"
+check "no turing package: reason" "no turing_unlock package for kernel 6.18.54-Unraid" "$(reason_of 0000:c5:00.0)"
+check "no turing package: ampere unlocked" unlocked "$(state_of 0000:cd:00.0)"
 teardown
 
 # Missing kmod for this kernel: no unlock, normal NVIDIA path kept.
@@ -126,7 +176,7 @@ configure yes $TARGETS
 early_boot module-present
 STUB_UNLOCK_RC=1 "$CONTROL" boot
 nvidia_driver_stage
-check "module load failure: nvidia still loads" "unlock targets=$TARGETS nvidia cdi" "$(events)"
+check "module load failure: nvidia still loads" "unlock gpu_unlock targets=$TARGETS nvidia cdi" "$(events)"
 check "module load failure: skipped" "gpu_unlock failed to load (1)" "$(reason_of 0000:cd:00.0)"
 teardown
 
@@ -136,7 +186,7 @@ configure yes $TARGETS
 early_boot module-present
 STUB_UNLOCK_FIXTURE=$FIXTURES/kmsg-mixed.txt "$CONTROL" boot
 nvidia_driver_stage
-check "one card failed: nvidia loads" "unlock targets=$TARGETS nvidia cdi" "$(events)"
+check "one card failed: nvidia loads" "unlock gpu_unlock targets=$TARGETS nvidia cdi" "$(events)"
 teardown
 
 # A bound target is skipped: no unbind, no unlock attempt on it.
@@ -145,7 +195,7 @@ configure yes $TARGETS
 early_boot module-present
 bind_gpu 0000:cc:00.0 nvidia
 STUB_UNLOCK_FIXTURE=$FIXTURES/kmsg-ok.txt "$CONTROL" boot
-check "bound: only the free card is unlocked" "unlock targets=0000:cd:00.0 nvidia" "$(events)"
+check "bound: only the free card is unlocked" "unlock gpu_unlock targets=0000:cd:00.0 nvidia" "$(events)"
 check "bound: state" skipped_bound "$(state_of 0000:cc:00.0)"
 check "bound: driver kept" nvidia "$(basename "$(readlink "$W/sys/pci/0000:cc:00.0/driver")")"
 teardown
@@ -156,7 +206,7 @@ configure yes $TARGETS
 early_boot module-present
 "$CONTROL" boot
 "$CONTROL" boot
-check "second run: one unlock only" "unlock targets=$TARGETS nvidia" "$(events)"
+check "second run: one unlock only" "unlock gpu_unlock targets=$TARGETS nvidia" "$(events)"
 teardown
 
 # Disabled: no unlock; a deferral left from the flash is undone by loading nvidia.

@@ -2,8 +2,8 @@
 <!DOCTYPE PLUGIN [
   <!ENTITY name       "gpu-unlock">
   <!ENTITY author     "EEEEgoose">
-  <!ENTITY version    "2026.10.27">
-  <!ENTITY md5        "47d78b05a28af7ac9cf6045285430662">
+  <!ENTITY version    "2026.10.27a">
+  <!ENTITY md5        "a904fe1685609cdc08be54a3fe250d1b">
   <!ENTITY launch     "Settings/GPUUnlock">
   <!ENTITY repo       "https://github.com/&author;/unlockGPU4Unraid">
   <!ENTITY pluginURL  "https://raw.githubusercontent.com/&author;/unlockGPU4Unraid/main/&name;.plg">
@@ -14,6 +14,11 @@
 <PLUGIN name="&name;" author="&author;" version="&version;" launch="&launch;" pluginURL="&pluginURL;" support="&repo;/issues" icon="gpu-unlock.png" min="7.3.0">
 
 <CHANGES>
+###2026.10.27a
+- 新增 Turing 显卡（RTX 2080 Ti 等 TU102/TU104/TU106）解锁，基于 nlzy/turing-unlock。页面会按显卡型号自动选用 gpu-unlock 或 turing-unlock，开机时两者都在 NVIDIA 加载前完成。
+- turing-unlock 的模块包和固件包同样需要在本机用 Docker 编译；只编译其中一个也可以，没有包的显卡会跳过解锁。
+- turing-unlock 较新，作者只在 Dell RTX 2080 Ti 22GB 上测试过，解锁后功耗很高，请谨慎使用。
+
 ###2026.10.27
 - 支持在 Unraid 中检查和安装插件更新：UI 包从 GitHub Releases 下载并校验 MD5，缓存在 U 盘上，之后离线启动也能使用。
 - 模块包和固件包仍需在本机用 Docker 编译，见仓库中的 docs/build-docker.md。
@@ -30,7 +35,7 @@
 
 <!--
 The UI package is downloaded once from the GitHub release and kept on the flash; the module and
-firmware packages are built locally (docs/build-docker.md). At boot every package comes from
+firmware packages of gpu-unlock and turing-unlock are built locally (docs/build-docker.md). At boot every package comes from
 &packages;, so the boot never waits for the network. rc.local installs this plugin before
 nvidia-driver.plg; see docs/boot-integration.md.
 -->
@@ -52,15 +57,20 @@ done
 <INLINE>
 KERNEL=$(uname -r)
 KTAG=$(echo "$KERNEL" | tr - _)
-kmod=$(ls &packages;/gpu-unlock-kmod-*_${KTAG}-x86_64-*.txz 2>/dev/null | tail -n 1)
-fw=$(ls &packages;/gpu-unlock-firmware-*-noarch-*.txz 2>/dev/null | tail -n 1)
-if [ -n "$kmod" ] &amp;&amp; [ -n "$fw" ]; then
-  upgradepkg --install-new --reinstall "$fw"
-  upgradepkg --install-new --reinstall "$kmod"
-  depmod -a "$KERNEL"
-else
-  echo "gpu-unlock: no module or firmware package for kernel $KERNEL; unlock skipped (see &repo;/blob/main/docs/build-docker.md)"
-fi
+installed=no
+# Each unlock module is optional: cards without their packages skip the unlock.
+for p in gpu-unlock turing-unlock; do
+  kmod=$(ls &packages;/$p-kmod-*_${KTAG}-x86_64-*.txz 2>/dev/null | tail -n 1)
+  fw=$(ls &packages;/$p-firmware-*-noarch-*.txz 2>/dev/null | tail -n 1)
+  if [ -n "$kmod" ] &amp;&amp; [ -n "$fw" ]; then
+    upgradepkg --install-new --reinstall "$fw"
+    upgradepkg --install-new --reinstall "$kmod"
+    installed=yes
+  else
+    echo "gpu-unlock: no $p module or firmware package for kernel $KERNEL; its cards skip the unlock (see &repo;/blob/main/docs/build-docker.md)"
+  fi
+done
+[ $installed = yes ] &amp;&amp; depmod -a "$KERNEL"
 
 if [ ! -f &plugin;/settings.cfg ]; then
   printf 'enabled="no"\ntargets=""\n' > &plugin;/settings.cfg
@@ -76,7 +86,7 @@ echo "gpu-unlock: $(/usr/local/sbin/gpu-unlock-control status | tr -d '\n' | tr 
 <INLINE>
 # Undo only this plugin's boot changes; the card state already applied stays until power off.
 /usr/local/sbin/gpu-unlock-control disable
-for pkg in gpu-unlock-kmod gpu-unlock-firmware gpu-unlock-ui; do
+for pkg in gpu-unlock-kmod gpu-unlock-firmware turing-unlock-kmod turing-unlock-firmware gpu-unlock-ui; do
   removepkg "$pkg" 2>/dev/null
 done
 depmod -a "$(uname -r)"

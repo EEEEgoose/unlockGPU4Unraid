@@ -2,12 +2,14 @@
 
 [English](build-docker.md) | 简体中文
 
-插件用到三个包，全部放在 U 盘的 `config/plugins/gpu-unlock/packages/` 下。其中模块包和固件包需要按本文编译，UI 包不用：
+插件用到的包全部放在 U 盘的 `config/plugins/gpu-unlock/packages/` 下。gpu-unlock（Ampere）和 turing-unlock（Turing）各有一个模块包和一个固件包，需要按本文编译；UI 包不用编译：
 
 | 包 | 内容 | 什么时候需要重新编译 |
 |---|---|---|
 | `gpu-unlock-kmod-…_<内核>-x86_64-1.txz` | 内核模块 `gpu_unlock.ko` | 每次 Unraid 升级内核后 |
 | `gpu-unlock-firmware-610.43.03-noarch-1.txz` | 解锁时加载到显卡上的 5 个固件文件 | 上游 gpu-unlock 更新固件版本时 |
+| `turing-unlock-kmod-…_<内核>-x86_64-1.txz` | 内核模块 `turing_unlock.ko` | 每次 Unraid 升级内核后 |
+| `turing-unlock-firmware-610.43.03-noarch-1.txz` | Turing 解锁用的 6 个固件文件 | 上游 turing-unlock 更新固件版本时 |
 | `gpu-unlock-ui-<插件版本>-x86_64-1.txz` | 控制脚本和设置页面 | 不用编译：安装或更新插件时自动从 GitHub Releases 下载，并校验 MD5 |
 
 固件含有 NVIDIA 的二进制文件，本仓库不分发固件，模块包和固件包都由你在自己的服务器上编译。编译过程中，固件由 NVIDIA 官方文件生成，生成后只供你自己使用，不要再分发。
@@ -21,7 +23,7 @@
 - 能访问下面这些地址，也可以改用镜像或代理（见第 2 步）：
   - `cdn.kernel.org`：内核源码
   - Arch Linux 软件源：编译工具
-  - `github.com`：上游 gpu-unlock 源码
+  - `github.com`：上游 gpu-unlock 和 turing-unlock 源码
   - `download.nvidia.com`、`archive.cachyos.org`：生成固件用的 NVIDIA 原始文件，下载后会校验 SHA-256
 - 编译需要在**正在运行目标内核**的系统上进行。脚本会读取 `/usr/src/linux-$(uname -r)` 中 Unraid 提供的内核配置、补丁和 `System.map`。
 
@@ -60,9 +62,11 @@ repo/build/unraid-container.sh /mnt/cache/build/gpu-unlock
 
 1. 安装编译工具：gcc、binutils、Python 3.14 等。
 2. 下载内核源码并校验 sha256，打上 `/usr/src` 中的 Unraid 补丁，然后用 Unraid 的配置执行 `olddefconfig`。生成的 `.config` 必须与 Unraid 原配置一致，只允许编译器版本和 Rust 探测项不同。
-3. 下载上游 gpu-unlock（固定 commit），编译模块，生成固件，运行上游测试。
+3. 依次下载上游 gpu-unlock 和 turing-unlock（各自固定 commit），编译模块，生成固件，运行上游测试（turing-unlock 没有测试，这一步会跳过）。两个项目使用同一份 NVIDIA 原始文件，只下载一次。
 4. 检查模块的 vermagic 与当前内核一致，并确认模块用到的每个符号都能在 `System.map` 中找到。
-5. 打出模块包和固件包。
+5. 打出两个项目的模块包和固件包，共 4 个。
+
+只需要其中一个时，可以在命令前加 `PROJECTS=gpu-unlock` 或 `PROJECTS=turing-unlock`。
 
 第一次编译约需 10–20 分钟，主要取决于下载速度。容器最多使用 16 个 CPU 核心，并以较低优先级运行。
 

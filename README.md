@@ -2,12 +2,14 @@
 
 English | [简体中文](README.zh-CN.md)
 
-Runs [Zagitta/gpu-unlock](https://github.com/Zagitta/gpu-unlock) on the Ampere cards you select, before the NVIDIA
-driver takes them, to unlock their FP16/BF16 instruction issue rate. The NVIDIA Driver plugin still provides the
-driver, the container toolkit and CDI.
+Unlocks the full-rate FP16/BF16 tensor throughput of the NVIDIA cards you select, before the NVIDIA driver takes
+them: [Zagitta/gpu-unlock](https://github.com/Zagitta/gpu-unlock) for Ampere cards and
+[nlzy/turing-unlock](https://github.com/nlzy/turing-unlock) for Turing cards. The plugin picks the right one for each
+card. The NVIDIA Driver plugin still provides the driver, the container toolkit and CDI.
 
-This plugin is built on [Zagitta/gpu-unlock](https://github.com/Zagitta/gpu-unlock): the unlock and the firmware
-generation come from upstream. The plugin orders the boot on Unraid, records the results and provides a settings page.
+This plugin is built on [Zagitta/gpu-unlock](https://github.com/Zagitta/gpu-unlock) and
+[nlzy/turing-unlock](https://github.com/nlzy/turing-unlock): the unlocks and the firmware generation come from
+upstream. The plugin orders the boot on Unraid, records the results and provides a settings page.
 
 ## Support
 
@@ -17,10 +19,15 @@ Tested on (details in [docs/validation.md](docs/validation.md), in Chinese):
 - Two RTX 3080 20 GB (`10de:2206`, memory-modded): unlocked at boot, with NVIDIA then driving all four cards
   (two RTX 2080 Ti in the same machine are not unlock targets)
 
-The selectable cards are upstream's: GeForce GA102/GA103/GA104/GA106. A supported PCI ID does not mean that board has
-been tested. Other NVIDIA cards, such as the RTX 2080 Ti, show as not unlockable and cannot be selected.
-The plugin only uses a module package built for exactly the running `uname -r`; without one, it skips the unlock for
-that boot and NVIDIA loads as usual.
+The selectable cards are the upstreams': GeForce GA102/GA103/GA104/GA106 through gpu-unlock, and TU102/TU104/TU106
+through turing-unlock. A supported PCI ID does not mean that board has been tested. Other NVIDIA cards show as not
+unlockable and cannot be selected. The plugin only uses module packages built for exactly the running `uname -r`;
+cards whose module has no package skip the unlock for that boot, and NVIDIA loads as usual.
+
+**Turing support is new.** turing-unlock was published in October 2026 and its author tested it only on a Dell RTX
+2080 Ti 22GB with driver 575.51.03. It has not been tested on this plugin's validation server yet. Its author warns
+that tensor cores at full rate draw a lot of power and may damage the hardware: start with one card and keep a power
+limit.
 
 ## Measured performance
 
@@ -50,7 +57,7 @@ firmware packages on your own server with Docker. The full steps are in
 **[Building the module and firmware with Docker](docs/build-docker.md)**. In short:
 
 1. In the Unraid terminal, download this repository and run `repo/build/unraid-container.sh <work dir>` to get the
-   module and firmware packages.
+   module and firmware packages of gpu-unlock and turing-unlock.
 2. Copy them to `config/plugins/gpu-unlock/packages/` on the flash drive.
 3. Install the plugin from `https://raw.githubusercontent.com/EEEEgoose/unlockGPU4Unraid/main/gpu-unlock.plg`, with `plugin install` or by pasting the URL into
    **Plugins → Install Plugin**. The UI package is downloaded from GitHub Releases.
@@ -92,10 +99,11 @@ How the boot is ordered: [docs/boot-integration.md](docs/boot-integration.md) (i
 ## Firmware and licensing
 
 - The code in this repository (plugin, build scripts, tests) is released under [GPL-2.0](LICENSE), like upstream.
-- The module is built from upstream's `GPL-2.0-only` source at commit `af28cbbfd3d922a659227ecfb7369adfd924cf03`;
+- The modules are built from the upstreams' `GPL-2.0-only` source, gpu-unlock at commit
+  `af28cbbfd3d922a659227ecfb7369adfd924cf03` and turing-unlock at commit `417f333263ff169e8f449c931b70db9dfd7b8ef4`;
   the build scripts and the source of the Unraid kernel patches are in this repository.
-- The firmware contains NVIDIA binaries covered by the NVIDIA driver license, and upstream claims no redistribution
-  approval (see upstream `firmware/NOTICE.md`). This repository therefore **neither contains nor distributes the
+- The firmware contains NVIDIA binaries covered by the NVIDIA driver license, and neither upstream claims
+  redistribution approval (see their `firmware/NOTICE.md`). This repository therefore **neither contains nor distributes the
   firmware**. The build generates it on your server from NVIDIA's own files, for your own use. Do not redistribute it.
 
 ## Development
