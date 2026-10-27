@@ -85,8 +85,8 @@ $h = fn($s) => htmlspecialchars($s, ENT_QUOTES);
 </select></dd>
 <dt>内核</dt><dd><?=$h($info['kernel'] ?? '')?></dd>
 <?foreach ($unlockers as $m => $u): $p = $packages[$m] ?? ['kmod' => '', 'firmware' => ''];?>
-<dt><?=$u['name']?> 模块包</dt><dd><?=$h($p['kmod'] ?: '缺少当前内核的包，对应的显卡本次启动会跳过解锁')?></dd>
-<dt><?=$u['name']?> 固件包</dt><dd><?=$h($p['firmware'] ?: '缺少')?></dd>
+<dt><?=$u['arch']?> 模块包</dt><dd><?=$h($p['kmod'] ?: '缺少当前内核的包，对应的显卡本次启动会跳过解锁')?></dd>
+<dt><?=$u['arch']?> 固件包</dt><dd><?=$h($p['firmware'] ?: '缺少')?></dd>
 <?endforeach;?>
 <dt>下次启动</dt><dd><?=($info['deferred'] ?? '') === 'yes' ? '已安排解锁' : '不解锁'?></dd>
 </dl>

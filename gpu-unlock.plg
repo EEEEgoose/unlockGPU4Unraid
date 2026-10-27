@@ -3,7 +3,7 @@
   <!ENTITY name       "gpu-unlock">
   <!ENTITY author     "EEEEgoose">
   <!ENTITY version    "2026.10.27a">
-  <!ENTITY md5        "f192a5b0600dca5f9d28ac65a8f966b8">
+  <!ENTITY md5        "5b85354ed5fdc6bcda03cfe1263a6f16">
   <!ENTITY launch     "Settings/GPUUnlock">
   <!ENTITY repo       "https://github.com/&author;/unlockGPU4Unraid">
   <!ENTITY pluginURL  "https://raw.githubusercontent.com/&author;/unlockGPU4Unraid/main/&name;.plg">
